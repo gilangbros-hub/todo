@@ -20,6 +20,7 @@ const taskArb = fc.record({
   branch_type: fc.option(fc.constantFrom('sequential' as const, 'parallel' as const), { nil: null }),
   branch_order: fc.option(fc.nat({ max: 100 }), { nil: null }),
   xp_reward: fc.nat({ max: 100 }),
+  pending_xp: fc.nat({ max: 500 }),
   created_at: fc.date().map(d => d.toISOString()),
   completed_at: fc.option(fc.date().map(d => d.toISOString()), { nil: null }),
 });
@@ -325,6 +326,7 @@ describe('Feature: rpg-quest-board, Property 8: Folder Grouping by Type', () => 
       branch_type: fc.option(fc.constantFrom('sequential' as const, 'parallel' as const), { nil: null }),
       branch_order: fc.option(fc.nat({ max: 100 }), { nil: null }),
       xp_reward: fc.nat({ max: 100 }),
+      pending_xp: fc.nat({ max: 500 }),
       created_at: fc.date().map(d => d.toISOString()),
       completed_at: fc.option(fc.date().map(d => d.toISOString()), { nil: null }),
     });

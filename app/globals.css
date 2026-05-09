@@ -180,3 +180,18 @@
 .animate-pulse-text {
   animation: pulse-text 1s ease-in-out infinite;
 }
+
+@keyframes xp-float {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-24px);
+    opacity: 0;
+  }
+}
+
+.animate-xp-float {
+  animation: xp-float 1s ease-out forwards;
+}

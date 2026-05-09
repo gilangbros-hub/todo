@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateTaskTitle, validateName, checkNestingDepth } from './validation';
+import { validateTaskTitle, validateName, checkNestingDepth, validateMoveNote } from './validation';
 import { Task } from './types';
 
 describe('validateTaskTitle', () => {
@@ -99,6 +99,7 @@ describe('checkNestingDepth', () => {
       branch_type: null,
       branch_order: null,
       xp_reward: 10,
+      pending_xp: 0,
       created_at: '2024-01-01T00:00:00Z',
       completed_at: null,
       ...overrides,
@@ -145,5 +146,49 @@ describe('checkNestingDepth', () => {
     const tasks = [makeTask({ id: 'root' })];
     const result = checkNestingDepth('nonexistent', tasks);
     expect(result).toEqual({ allowed: true, currentDepth: 0 });
+  });
+});
+
+describe('validateMoveNote', () => {
+  it('accepts a valid note (1-300 chars)', () => {
+    expect(validateMoveNote('Attacked the dragon')).toEqual({ valid: true });
+  });
+
+  it('accepts a note with exactly 1 character after trim', () => {
+    expect(validateMoveNote('a')).toEqual({ valid: true });
+  });
+
+  it('accepts a note with exactly 300 characters', () => {
+    const note = 'a'.repeat(300);
+    expect(validateMoveNote(note)).toEqual({ valid: true });
+  });
+
+  it('rejects an empty string', () => {
+    const result = validateMoveNote('');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Move note cannot be empty');
+  });
+
+  it('rejects a whitespace-only string', () => {
+    const result = validateMoveNote('   \t\n  ');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Move note cannot be empty');
+  });
+
+  it('rejects a note exceeding 300 characters after trim', () => {
+    const note = 'a'.repeat(301);
+    const result = validateMoveNote(note);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Move note must not exceed 300 characters');
+  });
+
+  it('trims whitespace before validating', () => {
+    expect(validateMoveNote('  hello world  ')).toEqual({ valid: true });
+  });
+
+  it('trims whitespace before checking length limit', () => {
+    // 300 chars + surrounding whitespace should pass
+    const note = '  ' + 'a'.repeat(300) + '  ';
+    expect(validateMoveNote(note)).toEqual({ valid: true });
   });
 });

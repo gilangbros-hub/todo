@@ -19,6 +19,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     branch_type: null,
     branch_order: null,
     xp_reward: 10,
+    pending_xp: 0,
     created_at: '2024-01-01T00:00:00Z',
     completed_at: null,
     ...overrides,

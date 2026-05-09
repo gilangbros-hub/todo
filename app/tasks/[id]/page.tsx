@@ -8,6 +8,7 @@ import { getTaskById, completeTask, createSubtask, updateTask } from '@/lib/serv
 import { awardXp, AwardXpResult } from '@/lib/services/player-stats';
 import { calculateXpReward } from '@/lib/xp';
 import SubtaskTree from '@/components/SubtaskTree';
+import BattleLog from '@/components/BattleLog';
 import XpToast from '@/components/XpToast';
 import LevelUpOverlay from '@/components/LevelUpOverlay';
 import { safeHexColor, isUuid } from '@/lib/security';
@@ -44,6 +45,9 @@ export default function TaskDetailPage() {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
 
+  // Pending XP state (from battle log moves)
+  const [pendingXp, setPendingXp] = useState<number>(0);
+
   // XP Toast state
   const [xpToastAmount, setXpToastAmount] = useState<number | null>(null);
 
@@ -62,6 +66,7 @@ export default function TaskDetailPage() {
       setLoading(true);
       const data = await getTaskById(id);
       setTask(data as any);
+      setPendingXp((data as any)?.pending_xp ?? 0);
       setNotFound(false);
     } catch {
       setNotFound(true);
@@ -83,16 +88,17 @@ export default function TaskDetailPage() {
       // 1. Complete the task
       await completeTask(id);
 
-      // 2. Calculate XP reward
+      // 2. Calculate XP reward (base + pending XP from battle log moves)
       const completedAt = new Date().toISOString();
       const isSubtask = task.parent_task_id !== null;
-      const xpAmount = calculateXpReward(task.priority, task.deadline, completedAt, isSubtask);
+      const baseXp = calculateXpReward(task.priority, task.deadline, completedAt, isSubtask);
+      const totalXp = baseXp + pendingXp;
 
-      // 3. Award XP
-      const result: AwardXpResult = await awardXp(xpAmount);
+      // 3. Award total XP (base + pending)
+      const result: AwardXpResult = await awardXp(totalXp);
 
-      // 4. Show XP toast
-      setXpToastAmount(xpAmount);
+      // 4. Show XP toast with total amount
+      setXpToastAmount(totalXp);
 
       // 5. If leveled up, show overlay
       if (result.leveledUp) {
@@ -152,6 +158,12 @@ export default function TaskDetailPage() {
     await updateTask(id, { branch_type: type });
     setTask((prev) => (prev ? { ...prev, branch_type: type } : prev));
   };
+
+  // Handle pending XP change from battle log
+  const handlePendingXpChange = useCallback((newTotal: number) => {
+    setPendingXp(newTotal);
+    setTask((prev) => (prev ? { ...prev, pending_xp: newTotal } : prev));
+  }, []);
 
   // Loading state
   if (loading) {
@@ -354,6 +366,22 @@ export default function TaskDetailPage() {
           onComplete={handleSubtaskComplete}
           onBranchTypeChange={handleBranchTypeChange}
           allTasks={task.subtasks || []}
+        />
+      </div>
+
+      {/* Battle Log Section */}
+      <div className="mt-8 rpg-card p-6">
+        <h2
+          className="font-pixel text-[11px] text-white mb-4"
+          style={{ textShadow: '2px 2px 0px #000' }}
+        >
+          ⚔️ Battle Log
+        </h2>
+        <BattleLog
+          taskId={id}
+          taskStatus={task.status}
+          pendingXp={pendingXp}
+          onPendingXpChange={handlePendingXpChange}
         />
       </div>
 

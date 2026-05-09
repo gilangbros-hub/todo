@@ -174,6 +174,7 @@ describe('Property 11: Nesting Depth Validation', () => {
       branch_type: null,
       branch_order: null,
       xp_reward: 10,
+      pending_xp: 0,
       created_at: new Date().toISOString(),
       completed_at: null,
     };

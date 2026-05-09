@@ -95,6 +95,7 @@ describe('Feature: rpg-quest-board, Property 12: Subtask Progress Calculation', 
     branch_type: fc.option(fc.constantFrom('sequential' as const, 'parallel' as const), { nil: null }),
     branch_order: fc.option(fc.nat({ max: 100 }), { nil: null }),
     xp_reward: fc.nat({ max: 100 }),
+    pending_xp: fc.nat({ max: 500 }),
     created_at: fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }).map(d => d.toISOString()),
     completed_at: fc.option(
       fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }).map(d => d.toISOString()),

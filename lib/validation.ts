@@ -9,6 +9,14 @@ export interface ValidationResult {
 }
 
 /**
+ * Validation result returned by the move note validator.
+ */
+export interface MoveNoteValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
  * Nesting depth check result.
  */
 export interface NestingDepthResult {
@@ -81,4 +89,24 @@ export function checkNestingDepth(taskId: string, tasks: Task[]): NestingDepthRe
     allowed: currentDepth < 3,
     currentDepth,
   };
+}
+
+/**
+ * Validates a battle log move note.
+ * - Trims input before validation.
+ * - Rejects empty or whitespace-only strings.
+ * - Rejects notes exceeding 300 characters after trim.
+ */
+export function validateMoveNote(input: string): MoveNoteValidationResult {
+  const trimmed = input.trim();
+
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Move note cannot be empty' };
+  }
+
+  if (trimmed.length > 300) {
+    return { valid: false, error: 'Move note must not exceed 300 characters' };
+  }
+
+  return { valid: true };
 }
