@@ -25,6 +25,7 @@ import FolderView from '@/components/FolderView';
 import WizardModal, { CreateTaskData } from '@/components/WizardModal';
 import EmptyState from '@/components/EmptyState';
 import ConnectionStatus from '@/components/ConnectionStatus';
+import XpPenaltyToast from '@/components/XpPenaltyToast';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [newTaskId, setNewTaskId] = useState<string | null>(null);
+  const [forfeitPenalty, setForfeitPenalty] = useState<number | null>(null);
 
   // Ref to track the bounce animation timeout
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,6 +76,22 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  // --- Check for forfeit penalty toast on mount ---
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('forfeit_penalty');
+      if (raw) {
+        sessionStorage.removeItem('forfeit_penalty');
+        const data = JSON.parse(raw) as { penaltyAmount: number; timestamp: number };
+        if (data.penaltyAmount > 0 && Date.now() - data.timestamp < 30000) {
+          setForfeitPenalty(data.penaltyAmount);
+        }
+      }
+    } catch {
+      // Ignore malformed sessionStorage data
+    }
+  }, []);
 
   // --- Real-time Subscriptions ---
   useEffect(() => {
@@ -294,6 +312,14 @@ export default function DashboardPage() {
         types={types}
         pics={pics}
       />
+
+      {/* Forfeit Penalty Toast */}
+      {forfeitPenalty !== null && (
+        <XpPenaltyToast
+          amount={forfeitPenalty}
+          onDismiss={() => setForfeitPenalty(null)}
+        />
+      )}
 
       {/* Connection Status */}
       <ConnectionStatus isConnected={isConnected} />

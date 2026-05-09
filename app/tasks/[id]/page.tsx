@@ -2,15 +2,18 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Task, BranchType } from '@/lib/types';
 import { getTaskById, completeTask, createSubtask, updateTask } from '@/lib/services/tasks';
 import { awardXp, AwardXpResult } from '@/lib/services/player-stats';
+import { forfeitQuest } from '@/lib/services/forfeit';
 import { calculateXpReward } from '@/lib/xp';
 import SubtaskTree from '@/components/SubtaskTree';
 import BattleLog from '@/components/BattleLog';
 import XpToast from '@/components/XpToast';
 import LevelUpOverlay from '@/components/LevelUpOverlay';
+import ForfeitButton from '@/components/ForfeitButton';
+import ForfeitConfirmDialog from '@/components/ForfeitConfirmDialog';
 import { safeHexColor, isUuid } from '@/lib/security';
 
 // Priority color mapping
@@ -37,6 +40,7 @@ const STATUS_BADGES: Record<string, string> = {
 
 export default function TaskDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [task, setTask] = useState<(Task & { subtasks?: Task[]; types?: any; pics?: any }) | null>(null);
@@ -53,6 +57,9 @@ export default function TaskDetailPage() {
 
   // Level-up overlay state
   const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
+
+  // Forfeit dialog state
+  const [isForfeitDialogOpen, setIsForfeitDialogOpen] = useState(false);
 
   // Fetch task on mount
   const fetchTask = useCallback(async () => {
@@ -164,6 +171,18 @@ export default function TaskDetailPage() {
     setPendingXp(newTotal);
     setTask((prev) => (prev ? { ...prev, pending_xp: newTotal } : prev));
   }, []);
+
+  // Handle forfeit quest
+  const handleForfeitConfirm = useCallback(async () => {
+    const result = await forfeitQuest(id);
+    // Store penalty data in sessionStorage for the dashboard toast
+    sessionStorage.setItem(
+      'forfeit_penalty',
+      JSON.stringify({ penaltyAmount: result.penaltyAmount, timestamp: Date.now() })
+    );
+    setIsForfeitDialogOpen(false);
+    router.push('/');
+  }, [id, router]);
 
   // Loading state
   if (loading) {
@@ -348,6 +367,23 @@ export default function TaskDetailPage() {
               {isDone ? '✓ QUEST COMPLETE' : isCompleting ? 'COMPLETING...' : '⚔ MARK QUEST AS DONE'}
             </button>
           </div>
+
+          {/* Forfeit Button */}
+          <div className="pt-4">
+            {task.parent_task_id !== null ? (
+              <p className="font-retro text-xs text-gray-400">
+                ⚠ This subtask can only be forfeited from the parent quest page.
+              </p>
+            ) : (
+              <ForfeitButton
+                taskId={id}
+                taskStatus={task.status}
+                isSubtask={false}
+                xpReward={task.xp_reward}
+                onForfeit={() => setIsForfeitDialogOpen(true)}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -400,6 +436,15 @@ export default function TaskDetailPage() {
           onDismiss={() => setLevelUpLevel(null)}
         />
       )}
+
+      {/* Forfeit Confirm Dialog */}
+      <ForfeitConfirmDialog
+        isOpen={isForfeitDialogOpen}
+        taskTitle={task.title}
+        penaltyAmount={Math.floor(task.xp_reward * 0.25)}
+        onConfirm={handleForfeitConfirm}
+        onCancel={() => setIsForfeitDialogOpen(false)}
+      />
 
       {/* Card flip animation style */}
       <style jsx>{`
