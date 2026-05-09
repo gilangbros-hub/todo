@@ -80,6 +80,7 @@ describe('Feature: rpg-quest-board, Property 12: Subtask Progress Calculation', 
   // Arbitrary for generating Task objects with random statuses
   const taskArb: fc.Arbitrary<Task> = fc.record({
     id: fc.uuid(),
+    user_id: fc.uuid(),
     title: fc.string({ minLength: 1, maxLength: 50 }),
     description: fc.option(fc.string({ maxLength: 100 }), { nil: null }),
     type_id: fc.option(fc.uuid(), { nil: null }),

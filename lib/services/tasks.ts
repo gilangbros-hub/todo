@@ -69,6 +69,9 @@ export async function createTask(data: {
   }
   const description = data.description ? capString(data.description, 500) || null : null;
 
+  // user_id is automatically set by the database DEFAULT auth.uid().
+  // The browser client includes session cookies, so auth.uid() resolves to
+  // the authenticated user. RLS INSERT policy validates ownership.
   const { data: task, error } = await supabase
     .from('tasks')
     .insert({
@@ -190,6 +193,7 @@ export async function createSubtask(
   }
   const description = data.description ? capString(data.description, 500) || null : null;
 
+  // user_id is automatically set by the database DEFAULT auth.uid().
   const { data: subtask, error } = await supabase
     .from('tasks')
     .insert({

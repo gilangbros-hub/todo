@@ -5,15 +5,20 @@ import { updateStreak } from '@/lib/streak';
 
 /**
  * Fetch the player stats record, or initialize one if none exists.
+ * RLS automatically scopes the query to the authenticated user's row,
+ * so no explicit user_id filter is needed.
  */
 export async function getPlayerStats(): Promise<PlayerStats> {
   const { data, error } = await supabase
     .from('player_stats')
     .select('*')
-    .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
+    throw new Error(`Failed to fetch player stats: ${error.message}`);
+  }
+
+  if (!data) {
     return initializePlayerStats();
   }
 
@@ -22,6 +27,9 @@ export async function getPlayerStats(): Promise<PlayerStats> {
 
 /**
  * Initialize a new player stats record with default values.
+ * user_id is automatically set by the database DEFAULT auth.uid().
+ * The browser client includes session cookies, so auth.uid() resolves to
+ * the authenticated user. RLS INSERT policy validates ownership.
  */
 export async function initializePlayerStats(): Promise<PlayerStats> {
   const { data, error } = await supabase
@@ -45,6 +53,7 @@ export interface AwardXpResult {
 
 /**
  * Award XP to the player, handle level-up with carry-over, and update streak.
+ * RLS UPDATE policy ensures only the authenticated user can update their own stats.
  *
  * @param amount - The XP amount to award (must be > 0)
  * @returns Updated player stats and whether a level-up occurred

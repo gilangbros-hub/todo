@@ -87,6 +87,7 @@ describe('validateName', () => {
 describe('checkNestingDepth', () => {
   function makeTask(overrides: Partial<Task> & { id: string }): Task {
     return {
+      user_id: 'test-user-id',
       title: 'Test Task',
       description: null,
       type_id: null,

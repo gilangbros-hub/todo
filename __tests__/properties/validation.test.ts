@@ -162,6 +162,7 @@ describe('Property 11: Nesting Depth Validation', () => {
   function makeTask(id: string, parentId: string | null): Task {
     return {
       id,
+      user_id: 'test-user-id',
       title: `Task ${id}`,
       description: null,
       type_id: null,

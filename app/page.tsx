@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [pics, setPics] = useState<PIC[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerStats>({
     id: '',
+    user_id: '',
     xp: 0,
     level: 1,
     streak: 0,

@@ -30,6 +30,7 @@ export const BASE_XP: Record<Priority, number> = {
 
 export interface Task {
   id: string;
+  user_id: string;
   title: string;
   description: string | null;
   type_id: string | null;
@@ -47,6 +48,7 @@ export interface Task {
 
 export interface TaskType {
   id: string;
+  user_id: string;
   name: string;
   icon: string;
   color: string;
@@ -55,6 +57,7 @@ export interface TaskType {
 
 export interface PIC {
   id: string;
+  user_id: string;
   name: string;
   avatar: string;
   rpg_class: string;
@@ -63,6 +66,7 @@ export interface PIC {
 
 export interface PlayerStats {
   id: string;
+  user_id: string;
   xp: number;
   level: number;
   streak: number;

@@ -7,6 +7,7 @@ import { Task } from '../../lib/types';
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task-1',
+    user_id: 'test-user-id',
     title: 'Test Task',
     description: null,
     type_id: null,

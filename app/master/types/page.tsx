@@ -18,6 +18,7 @@ export default function MasterTypesPage() {
   const [types, setTypes] = useState<TaskType[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerStats>({
     id: '',
+    user_id: '',
     xp: 0,
     level: 1,
     streak: 0,

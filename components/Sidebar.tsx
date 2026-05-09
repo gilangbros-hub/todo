@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Quest Board' },
   { href: '/master/types', label: 'Master Types' },
   { href: '/master/pics', label: 'Master PICs' },
+  { href: '/account', label: 'Hero Profile' },
 ] as const;
 
 export default function Sidebar({ playerStats, activeRoute }: SidebarProps) {

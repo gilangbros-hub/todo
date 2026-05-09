@@ -50,9 +50,7 @@ describe('player-stats service', () => {
 
       mockFrom.mockReturnValue({
         select: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({ data: existingStats, error: null }),
-          }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: existingStats, error: null }),
         }),
       });
 
@@ -70,13 +68,11 @@ describe('player-stats service', () => {
         last_completed_date: null,
       };
 
-      // First call (getPlayerStats) returns no data
+      // First call (getPlayerStats) returns no data (maybeSingle returns null without error)
       mockFrom
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: null, error: { message: 'No rows' } }),
-            }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
           }),
         })
         // Second call (initializePlayerStats)
@@ -90,6 +86,16 @@ describe('player-stats service', () => {
 
       const result = await getPlayerStats();
       expect(result).toEqual(newStats);
+    });
+
+    it('throws when query returns an error', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+        }),
+      });
+
+      await expect(getPlayerStats()).rejects.toThrow('Failed to fetch player stats: DB error');
     });
   });
 
@@ -158,9 +164,7 @@ describe('player-stats service', () => {
       mockFrom
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
-            }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
           }),
         })
         // update call
@@ -200,9 +204,7 @@ describe('player-stats service', () => {
       mockFrom
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
-            }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
           }),
         })
         .mockReturnValueOnce({
@@ -233,9 +235,7 @@ describe('player-stats service', () => {
       mockFrom
         .mockReturnValueOnce({
           select: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
-            }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: currentStats, error: null }),
           }),
         })
         .mockReturnValueOnce({

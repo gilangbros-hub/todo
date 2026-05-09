@@ -8,6 +8,7 @@ import { Task, TaskType, Status, Priority, STATUSES, PRIORITIES } from '@/lib/ty
 
 const taskArb = fc.record({
   id: fc.uuid(),
+  user_id: fc.uuid(),
   title: fc.string({ minLength: 3, maxLength: 100 }),
   description: fc.option(fc.string({ maxLength: 500 }), { nil: null }),
   type_id: fc.option(fc.uuid(), { nil: null }),
@@ -43,6 +44,7 @@ const sortOrderArb = fc.constantFrom<SortOrder>('asc', 'desc');
 
 const taskTypeArb = fc.record({
   id: fc.uuid(),
+  user_id: fc.uuid(),
   name: fc.string({ minLength: 1, maxLength: 50 }),
   icon: fc.string({ minLength: 1, maxLength: 100 }),
   color: fc.string({ minLength: 1, maxLength: 20 }),
@@ -311,6 +313,7 @@ describe('Feature: rpg-quest-board, Property 8: Folder Grouping by Type', () => 
     const typeIds = types.map(t => t.id);
     const taskWithKnownTypeArb = fc.record({
       id: fc.uuid(),
+      user_id: fc.uuid(),
       title: fc.string({ minLength: 3, maxLength: 100 }),
       description: fc.option(fc.string({ maxLength: 500 }), { nil: null }),
       type_id: fc.option(fc.constantFrom(...typeIds), { nil: null }),

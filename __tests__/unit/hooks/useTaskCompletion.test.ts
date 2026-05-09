@@ -48,6 +48,7 @@ const mockCalculateXpReward = calculateXpReward as ReturnType<typeof vi.fn>;
 function createMockTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task-1',
+    user_id: 'test-user-id',
     title: 'Test Quest',
     description: null,
     type_id: null,
