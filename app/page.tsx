@@ -80,6 +80,8 @@ export default function DashboardPage() {
     const unsubTasks = subscribeToTasks((event, payload) => {
       setTasks((prev) => {
         if (event === 'INSERT') {
+          // Deduplicate: skip if already added via optimistic update
+          if (prev.some((t) => t.id === payload.id)) return prev;
           return [...prev, payload];
         }
         if (event === 'UPDATE') {
@@ -95,6 +97,7 @@ export default function DashboardPage() {
     const unsubTypes = subscribeToTypes((event, payload) => {
       setTypes((prev) => {
         if (event === 'INSERT') {
+          if (prev.some((t) => t.id === payload.id)) return prev;
           return [...prev, payload];
         }
         if (event === 'UPDATE') {
@@ -110,6 +113,7 @@ export default function DashboardPage() {
     const unsubPics = subscribeToPics((event, payload) => {
       setPics((prev) => {
         if (event === 'INSERT') {
+          if (prev.some((p) => p.id === payload.id)) return prev;
           return [...prev, payload];
         }
         if (event === 'UPDATE') {
