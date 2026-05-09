@@ -17,8 +17,9 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
+    console.error('Login error:', error.message, error.status);
     return NextResponse.json(
-      { error: 'Invalid credentials. The realm rejects your entry.' },
+      { error: `Login failed: ${error.message}` },
       { status: 401 }
     );
   }

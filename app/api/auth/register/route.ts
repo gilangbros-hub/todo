@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    // Generic error to avoid revealing account existence
+    console.error('Registration error:', error.message, error.status);
     return NextResponse.json(
-      { error: 'Registration failed. Please try again.' },
+      { error: `Registration failed: ${error.message}` },
       { status: 400 }
     );
   }
