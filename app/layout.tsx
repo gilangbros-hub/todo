@@ -19,6 +19,9 @@ const vt323 = VT323({
 export const metadata: Metadata = {
   title: "Quest Board — RPG To-Do List",
   description: "A gamified RPG-style to-do list application",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

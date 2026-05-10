@@ -55,6 +55,8 @@ function LoginForm() {
       }
 
       router.push("/");
+      // Set flag for loading screen on dashboard
+      sessionStorage.setItem('show_loading_screen', '1');
     } catch {
       setServerError("Connection failed. Please check your network and try again.");
     } finally {

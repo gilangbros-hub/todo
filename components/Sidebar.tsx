@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { PlayerStats } from '@/lib/types';
 import { calculateLevel } from '@/lib/xp';
 
@@ -22,6 +23,20 @@ export default function Sidebar({ playerStats, activeRoute }: SidebarProps) {
 
   return (
     <aside className="w-64 min-h-screen bg-rpg-card border-r-pixel border-rpg-border p-4 flex flex-col gap-6">
+      {/* Logo */}
+      <div className="flex items-center justify-center gap-2 py-2">
+        <Image
+          src="/logo.png"
+          alt="Quest Board"
+          width={32}
+          height={32}
+          className="pixel-art"
+        />
+        <span className="font-pixel text-[10px] text-rpg-legendary" style={{ textShadow: '0 0 6px #f0c040' }}>
+          Quest Board
+        </span>
+      </div>
+
       {/* Player Stats Section */}
       <div className="flex flex-col gap-4">
         {/* Level Badge */}

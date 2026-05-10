@@ -26,6 +26,7 @@ import WizardModal, { CreateTaskData } from '@/components/WizardModal';
 import EmptyState from '@/components/EmptyState';
 import ConnectionStatus from '@/components/ConnectionStatus';
 import XpPenaltyToast from '@/components/XpPenaltyToast';
+import LoadingScreen from '@/components/LoadingScreen';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function DashboardPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [newTaskId, setNewTaskId] = useState<string | null>(null);
   const [forfeitPenalty, setForfeitPenalty] = useState<number | null>(null);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(false);
 
   // Ref to track the bounce animation timeout
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,6 +92,19 @@ export default function DashboardPage() {
       }
     } catch {
       // Ignore malformed sessionStorage data
+    }
+  }, []);
+
+  // --- Check for loading screen flag (post-login) ---
+  useEffect(() => {
+    try {
+      const flag = sessionStorage.getItem('show_loading_screen');
+      if (flag) {
+        sessionStorage.removeItem('show_loading_screen');
+        setShowLoadingScreen(true);
+      }
+    } catch {
+      // Ignore
     }
   }, []);
 
@@ -238,7 +253,13 @@ export default function DashboardPage() {
   const hasNoMatches = !hasNoTasks && sortedTasks.length === 0;
 
   return (
-    <div className="flex min-h-screen">
+    <>
+      {/* Loading Screen (shown after login) */}
+      {showLoadingScreen && (
+        <LoadingScreen onComplete={() => setShowLoadingScreen(false)} />
+      )}
+
+      <div className="flex min-h-screen">
       {/* Sidebar */}
       <Sidebar playerStats={playerStats} activeRoute="/" />
 
@@ -324,5 +345,6 @@ export default function DashboardPage() {
       {/* Connection Status */}
       <ConnectionStatus isConnected={isConnected} />
     </div>
+    </>
   );
 }
