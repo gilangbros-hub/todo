@@ -7,6 +7,7 @@ Defenses applied against the OWASP Top 10 (2021).
 - **Row Level Security** enabled on every table in `supabase/migrations/002_security_hardening.sql`.
 - Single-player model uses a permissive `anon` policy today, but RLS is on so introducing per-user ownership is a policy change, not a schema change.
 - Privileges are explicitly granted to the `anon` role (not inherited from `public`).
+- **`forfeit_quest` RPC** (`supabase/migrations/005_forfeit_quest.sql`) uses `SECURITY DEFINER` to perform atomic task deletion with XP penalty. The function independently validates ownership (`user_id = auth.uid()`), eligibility (status ≠ 'done', not a subtask), and floors XP at zero before deleting. Client-side eligibility gating is complemented by server-side enforcement to prevent bypass.
 
 ## A02: Cryptographic Failures
 
@@ -27,6 +28,7 @@ Defenses applied against the OWASP Top 10 (2021).
 
 - All XP / level / streak logic is covered by property-based tests (fast-check, 100+ runs per property) validating invariants under arbitrary inputs.
 - Subtask nesting is capped at 3 levels in both the UI (`SubtaskTree`) and service (`createSubtask`).
+- **Forfeit quest** XP penalty calculation (`floor(xp_reward * 0.25)`) and level recalculation are covered by property-based tests ensuring the XP floor-at-zero invariant holds and level is consistent with the iterative threshold formula for any input.
 
 ## A05: Security Misconfiguration
 

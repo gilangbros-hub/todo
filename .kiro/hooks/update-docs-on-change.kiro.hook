@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "name": "Update Docs on Source Change",
+  "description": "When source files (TypeScript, CSS, SQL, config) are edited, ask the agent to review and update the README.md or SECURITY.md documentation to reflect the changes.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.ts",
+      "*.tsx",
+      "*.css",
+      "*.sql",
+      "*.mjs",
+      "next.config.mjs",
+      "tailwind.config.ts",
+      "package.json"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A source file was just edited. Review the change and determine if the project documentation (README.md or SECURITY.md) needs to be updated to reflect it. If so, make the appropriate updates to keep the docs accurate and in sync with the codebase. Focus on documenting new features, API changes, configuration changes, security updates, or architectural changes. If the change is minor or internal and doesn't affect documentation, do nothing."
+  }
+}
