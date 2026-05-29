@@ -22,6 +22,7 @@ Defenses applied against the OWASP Top 10 (2021).
 - **Length caps** in service-layer inserts/updates (`lib/services/*.ts`) prevent oversized payloads before they reach the DB.
 - **Identifier sanitization** (`sanitizeIdentifier`) strips control chars, angle brackets, quotes, and backticks from avatars.
 - **UUID validation** on `/tasks/[id]` route param rejects malformed IDs before the DB query.
+- **BRD input capping**: The `/api/brd/analyze` route handler enforces a 100,000-character maximum on user-submitted text and validates minimum length (50 chars) before forwarding to the AI model. AI responses are parsed as JSON with strict schema validation (`validateAnalysisResponse`) — no raw AI output is rendered without validation.
 - React escapes text children by default; no uses of `dangerouslySetInnerHTML`, `eval`, or `innerHTML`.
 
 ## A04: Insecure Design
@@ -66,7 +67,8 @@ Defenses applied against the OWASP Top 10 (2021).
 
 ## A10: Server-Side Request Forgery
 
-- Client only issues requests to the Supabase origin specified by `NEXT_PUBLIC_SUPABASE_URL`. CSP `connect-src` locks this down at the browser level.
+- Client only issues requests to the Supabase origin specified by `NEXT_PUBLIC_SUPABASE_URL` and the Google Gemini API (via `@google/generative-ai` SDK). CSP `connect-src` locks down browser-initiated requests.
+- The `/api/brd/analyze` route handler sends user-provided text to Google Gemini for analysis. The API key (`GOOGLE_GEMINI_API_KEY`) is server-side only and never exposed to the client. Input is capped at 100,000 characters and validated before forwarding.
 - No user input flows into `fetch` URLs.
 
 ## Tests

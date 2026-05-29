@@ -107,3 +107,48 @@ export interface BattleLogMove {
   pending_xp: number;
   created_at: string;
 }
+
+// ============================================================
+// BRD Oracle — Document Analysis Types
+// ============================================================
+
+// --- Pilot Status ---
+
+export const PILOT_STATUSES = ['pilot', 'full_rollout', 'phased', 'unknown'] as const;
+export type PilotStatus = (typeof PILOT_STATUSES)[number];
+
+export const PILOT_STATUS_CONFIG: Record<PilotStatus, { label: string; color: string }> = {
+  pilot: { label: 'Trial Quest', color: 'text-rpg-rare' },
+  full_rollout: { label: 'Full Campaign', color: 'text-rpg-legendary' },
+  phased: { label: 'Phased Assault', color: 'text-rpg-epic' },
+  unknown: { label: 'Uncharted', color: 'text-gray-400' },
+};
+
+// --- BRD Document ---
+
+export interface BrdDocument {
+  id: string;
+  user_id: string;
+  title: string;
+  source_text: string;
+  file_name: string | null;
+  created_at: string;
+}
+
+// --- BRD Feature (Prophecy) ---
+
+export interface BrdFeature {
+  id: string;
+  user_id: string;
+  document_id: string;
+  name: string;
+  description: string | null;
+  pilot_status: PilotStatus;
+  retention: string | null;
+  business_flow: string | null;
+  as_is: string | null;
+  to_be: string | null;
+  risks: string | null;
+  suggested_priority: Priority;
+  created_at: string;
+}

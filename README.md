@@ -45,6 +45,13 @@ Quest Board wraps a full-featured task management system in a retro pixel-art RP
 - **Level-Up Celebrations** — Pixel confetti and overlay animation when you reach a new level
 - **Forfeit Mechanic** — Abandon quests with an XP penalty (atomic transaction with cascade deletion)
 
+### The Oracle (AI-Powered BRD Analysis)
+
+- **Document Analysis** — Upload or paste Business Requirement Documents for AI-powered feature extraction
+- **Gemini Integration** — Uses Google Gemini 2.0 Flash to decipher features, priorities, and risks from BRD text
+- **Feature Cards** — Extracted features displayed as "prophecy cards" with priority, pilot status, retention, and risk info
+- **History** — Past analyses saved and browsable from the Oracle page
+
 ### Real-Time & Multi-User
 
 - **Live Updates** — Supabase real-time subscriptions keep everything in sync
@@ -70,6 +77,7 @@ Quest Board wraps a full-featured task management system in a retro pixel-art RP
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript 5 (strict mode) |
 | Database | Supabase (PostgreSQL + Auth + Realtime) |
+| AI | Google Gemini 2.0 Flash (BRD analysis) |
 | Styling | Tailwind CSS 3 with custom RPG tokens |
 | Testing | Vitest + fast-check (property-based) |
 | Fonts | Press Start 2P, VT323 (via `next/font`) |
@@ -98,6 +106,7 @@ Create a `.env.local` file:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+GOOGLE_GEMINI_API_KEY=your_gemini_api_key   # Required for The Oracle (BRD analysis)
 ```
 
 ### Database Migrations
@@ -110,6 +119,7 @@ Run the SQL migrations in `supabase/migrations/` against your Supabase project (
 003_add_user_auth.sql
 004_battle_log.sql
 005_forfeit_quest.sql
+006_brd_analysis.sql
 ```
 
 ### Development
@@ -128,6 +138,7 @@ Open [http://localhost:3000](http://localhost:3000) — register a hero and star
 app/                    → Pages and API routes (App Router)
 ├── page.tsx            → Dashboard (quest board)
 ├── tasks/[id]/         → Quest detail + battle log
+├── oracle/             → The Oracle (BRD analysis)
 ├── master/types/       → Guild management
 ├── master/pics/        → Party member management
 ├── login/              → "Enter the Realm"
