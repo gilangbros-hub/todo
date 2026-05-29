@@ -33,3 +33,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 node_modules
+
+# AI tool config directories
+.agent/
+.claude/
+.cursor/
+.gemini/
+.codex/
+.codebuddy/
+.continue/
+.github/prompts/
+.opencode/
+.qoder/
+.roo/
+.trae/
+.windsurf/
+__pycache__/
