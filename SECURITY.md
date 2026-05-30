@@ -8,6 +8,7 @@ Defenses applied against the OWASP Top 10 (2021).
 - Single-player model uses a permissive `anon` policy today, but RLS is on so introducing per-user ownership is a policy change, not a schema change.
 - Privileges are explicitly granted to the `anon` role (not inherited from `public`).
 - **`forfeit_quest` RPC** (`supabase/migrations/005_forfeit_quest.sql`) uses `SECURITY DEFINER` to perform atomic task deletion with XP penalty. The function independently validates ownership (`user_id = auth.uid()`), eligibility (status ≠ 'done', not a subtask), and floors XP at zero before deleting. Client-side eligibility gating is complemented by server-side enforcement to prevent bypass.
+- **Online Clipboard** tables (`clipboard_sessions`, `clipboard_entries` in `supabase/migrations/013_clipboard.sql`) use a single combined `FOR ALL` RLS policy per table, restricting all operations to rows where `user_id = auth.uid()`. Cascade deletion ensures entries are removed when their parent session is deleted.
 
 ## A02: Cryptographic Failures
 
@@ -22,7 +23,7 @@ Defenses applied against the OWASP Top 10 (2021).
 - **Length caps** in service-layer inserts/updates (`lib/services/*.ts`) prevent oversized payloads before they reach the DB.
 - **Identifier sanitization** (`sanitizeIdentifier`) strips control chars, angle brackets, quotes, and backticks from avatars.
 - **UUID validation** on `/tasks/[id]` route param rejects malformed IDs before the DB query.
-- **BRD input capping**: The `/api/brd/analyze` route handler enforces a 100,000-character maximum on user-submitted text and validates minimum length (50 chars) before forwarding to the AI model. AI responses are parsed as JSON with strict schema validation (`validateAnalysisResponse`) — no raw AI output is rendered without validation.
+- **BRD input capping**: The `/api/brd/analyze` and `/api/brd/stream` route handlers enforce a 100,000-character maximum on user-submitted text and validate minimum length (50 chars) before forwarding to the AI model (DeepSeek via OpenAI SDK). AI responses are parsed as JSON with strict schema validation (`validateAnalysisResponse`) — no raw AI output is rendered without validation. The streaming endpoint (`/api/brd/stream`) uses Server-Sent Events (SSE) and validates the model parameter against an allowlist before use.
 - React escapes text children by default; no uses of `dangerouslySetInnerHTML`, `eval`, or `innerHTML`.
 
 ## A04: Insecure Design
@@ -67,8 +68,8 @@ Defenses applied against the OWASP Top 10 (2021).
 
 ## A10: Server-Side Request Forgery
 
-- Client only issues requests to the Supabase origin specified by `NEXT_PUBLIC_SUPABASE_URL` and the Google Gemini API (via `@google/generative-ai` SDK). CSP `connect-src` locks down browser-initiated requests.
-- The `/api/brd/analyze` route handler sends user-provided text to Google Gemini for analysis. The API key (`GOOGLE_GEMINI_API_KEY`) is server-side only and never exposed to the client. Input is capped at 100,000 characters and validated before forwarding.
+- Client only issues requests to the Supabase origin specified by `NEXT_PUBLIC_SUPABASE_URL`. CSP `connect-src` locks down browser-initiated requests.
+- The `/api/brd/analyze` and `/api/brd/stream` route handlers send user-provided text to DeepSeek (`https://api.deepseek.com`) for analysis via the OpenAI SDK. The API key (`DEEPSEEK_API_KEY`) is server-side only and never exposed to the client. Input is capped at 100,000 characters and validated before forwarding. The streaming endpoint validates the requested model against an explicit allowlist (`ALLOWED_MODELS`).
 - No user input flows into `fetch` URLs.
 
 ## Tests

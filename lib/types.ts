@@ -132,6 +132,15 @@ export interface BrdDocument {
   title: string;
   source_text: string;
   file_name: string | null;
+  analysis_status: 'analyzing' | 'completed' | 'partial' | 'failed';
+  sections_completed: string[];
+  flow_process: unknown[];
+  improvements: unknown[];
+  questions: unknown[];
+  risk_analysis: unknown[];
+  architecture_diagram: string;
+  impacted_systems: unknown[];
+  fsd_design: unknown[];
   created_at: string;
 }
 
@@ -150,5 +159,12 @@ export interface BrdFeature {
   to_be: string | null;
   risks: string | null;
   suggested_priority: Priority;
+  requirement_type: 'functional' | 'non_functional';
+  precondition: string | null;
+  postcondition: string | null;
+  user_roles: string[];
+  impacted_process: string | null;
+  scope: 'in_scope' | 'out_of_scope' | 'unknown';
+  accounting_impact: string | null;
   created_at: string;
 }

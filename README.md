@@ -48,9 +48,16 @@ Quest Board wraps a full-featured task management system in a retro pixel-art RP
 ### The Oracle (AI-Powered BRD Analysis)
 
 - **Document Analysis** — Upload or paste Business Requirement Documents for AI-powered feature extraction
-- **Gemini Integration** — Uses Google Gemini 2.0 Flash to decipher features, priorities, and risks from BRD text
-- **Feature Cards** — Extracted features displayed as "prophecy cards" with priority, pilot status, retention, and risk info
+- **Model Selection** — Choose between DeepSeek V4 Pro (deep reasoning), V4 Flash (fast & cheap), and legacy models
+- **Feature Cards** — Extracted features displayed as "prophecy cards" with priority, business transformation, execution contract, and risk info
 - **History** — Past analyses saved and browsable from the Oracle page
+
+### Online Clipboard
+
+- **Sessions** — Create named clipboard sessions to organize copied content
+- **Timestamped Entries** — Each paste is recorded with a timestamp for easy reference
+- **Real-Time Sync** — Entries sync across tabs and devices via Supabase real-time
+- **Per-User Isolation** — RLS ensures clipboard data is private to each hero
 
 ### Real-Time & Multi-User
 
@@ -77,7 +84,7 @@ Quest Board wraps a full-featured task management system in a retro pixel-art RP
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript 5 (strict mode) |
 | Database | Supabase (PostgreSQL + Auth + Realtime) |
-| AI | Google Gemini 2.0 Flash (BRD analysis) |
+| AI | DeepSeek (V4 Pro, V4 Flash, legacy models) |
 | Styling | Tailwind CSS 3 with custom RPG tokens |
 | Testing | Vitest + fast-check (property-based) |
 | Fonts | Press Start 2P, VT323 (via `next/font`) |
@@ -106,7 +113,7 @@ Create a `.env.local` file:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-GOOGLE_GEMINI_API_KEY=your_gemini_api_key   # Required for The Oracle (BRD analysis)
+DEEPSEEK_API_KEY=your_deepseek_api_key       # Required for The Oracle (BRD analysis)
 ```
 
 ### Database Migrations
@@ -120,6 +127,11 @@ Run the SQL migrations in `supabase/migrations/` against your Supabase project (
 004_battle_log.sql
 005_forfeit_quest.sql
 006_brd_analysis.sql
+007_brd_requirement_type.sql
+008_brd_feature_fields.sql
+010_parallel_analysis.sql
+012_advisory_extras.sql
+013_clipboard.sql
 ```
 
 ### Development

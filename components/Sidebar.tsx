@@ -13,6 +13,7 @@ interface SidebarProps {
 const NAV_LINKS = [
   { href: '/', label: 'Quest Board' },
   { href: '/oracle', label: 'The Oracle' },
+  { href: '/clipboard', label: 'Clipboard' },
   { href: '/master/types', label: 'Master Types' },
   { href: '/master/pics', label: 'Master PICs' },
   { href: '/account', label: 'Hero Profile' },

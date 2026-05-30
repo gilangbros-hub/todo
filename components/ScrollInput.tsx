@@ -3,14 +3,22 @@
 import { useState, useRef } from 'react';
 
 interface ScrollInputProps {
-  onSubmit: (text: string, title: string, fileName: string | null) => void;
+  onSubmit: (text: string, title: string, fileName: string | null, model: string) => void;
   isLoading: boolean;
 }
+
+const DEEPSEEK_MODELS = [
+  { id: 'deepseek-v4-pro', label: 'V4 Pro', description: 'Most capable — deep reasoning' },
+  { id: 'deepseek-v4-flash', label: 'V4 Flash', description: 'Fast & cheap' },
+  { id: 'deepseek-chat', label: 'Chat (legacy)', description: 'V4 Flash non-thinking mode' },
+  { id: 'deepseek-reasoner', label: 'Reasoner (legacy)', description: 'V4 Flash thinking mode' },
+] as const;
 
 export default function ScrollInput({ onSubmit, isLoading }: ScrollInputProps) {
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
+  const [model, setModel] = useState('deepseek-v4-pro');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,7 +84,7 @@ export default function ScrollInput({ onSubmit, isLoading }: ScrollInputProps) {
 
   const handleSubmit = () => {
     if (!text.trim() || !title.trim()) return;
-    onSubmit(text.trim(), title.trim(), fileName);
+    onSubmit(text.trim(), title.trim(), fileName, model);
   };
 
   return (
@@ -153,11 +161,37 @@ export default function ScrollInput({ onSubmit, isLoading }: ScrollInputProps) {
         </p>
       </div>
 
+      {/* Model Selector */}
+      <div>
+        <label className="block font-pixel text-[10px] text-rpg-rare mb-2">
+          Oracle Model
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          {DEEPSEEK_MODELS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setModel(m.id)}
+              className={`px-3 py-2 text-left pixel-border transition-all cursor-pointer ${
+                model === m.id
+                  ? 'border-rpg-legendary shadow-legendary'
+                  : 'border-rpg-border hover:border-rpg-rare'
+              }`}
+            >
+              <p className={`font-pixel text-[8px] ${model === m.id ? 'text-rpg-legendary' : 'text-white'}`}>
+                {m.label}
+              </p>
+              <p className="font-retro text-[11px] text-gray-400">{m.description}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Submit Button */}
       <button
         onClick={handleSubmit}
         disabled={isLoading || !text.trim() || !title.trim()}
-        className="w-full px-4 py-3 font-pixel text-xs bg-rpg-legendary text-rpg-dark pixel-border border-rpg-legendary hover:shadow-legendary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-3 font-pixel text-xs bg-rpg-legendary text-rpg-dark pixel-border border-rpg-legendary hover:shadow-legendary transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {isLoading ? '🔮 The Oracle is reading...' : '🔮 Consult the Oracle'}
       </button>

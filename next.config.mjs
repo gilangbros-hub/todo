@@ -61,6 +61,13 @@ const nextConfig = {
   // Disable the "Powered by Next.js" header to reduce info disclosure (A05).
   poweredByHeader: false,
 
+  // pdf-parse uses Node.js `fs` internally (loads a test file on import).
+  // Marking it as external prevents Next.js from bundling it, which fixes
+  // "failed to parse PDF file" errors in API routes.
+  experimental: {
+    serverComponentsExternalPackages: ['pdf-parse'],
+  },
+
   // Enforce ESLint during builds to catch security-relevant issues early.
   eslint: {
     ignoreDuringBuilds: false,
