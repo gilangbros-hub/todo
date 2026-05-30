@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
         // Save features to brd_features
         if (features.length > 0) {
-          const featureRows = features.map((f: Record<string, unknown>) => ({
+          const featureRows = (features as Record<string, unknown>[]).map((f) => ({
             document_id: documentId,
             name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
             description: typeof f.description === 'string' ? f.description.slice(0, 800) : null,

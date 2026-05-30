@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
 
         if (features.length > 0) {
-          const featureRows = features.map((f: Record<string, unknown>) => ({
+          const featureRows = (features as Record<string, unknown>[]).map((f) => ({
             document_id: documentId,
             name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
             description: typeof f.description === 'string' ? f.description.slice(0, 800) : null,
