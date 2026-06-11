@@ -132,6 +132,7 @@ Run the SQL migrations in `supabase/migrations/` against your Supabase project (
 010_parallel_analysis.sql
 012_advisory_extras.sql
 013_clipboard.sql
+014_brd_documents_update_policy.sql
 ```
 
 ### Development

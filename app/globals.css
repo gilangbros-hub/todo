@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /* Hide scrollbar while keeping scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   body {
     @apply bg-rpg-dark text-white font-retro;
@@ -177,6 +188,31 @@
   }
 }
 
+/* Oracle — Requirement card flip-in */
+@keyframes flip-in {
+  0% {
+    transform: rotateX(-80deg);
+    opacity: 0;
+  }
+  100% {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+}
+
+/* Oracle — Hourglass slow spin */
+@keyframes slow-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+
 .animate-pulse-text {
   animation: pulse-text 1s ease-in-out infinite;
 }
@@ -194,4 +230,45 @@
 
 .animate-xp-float {
   animation: xp-float 1s ease-out forwards;
+}
+
+/* Oracle — ScoreOrb fill animation */
+@keyframes score-orb-fill {
+  from {
+    stroke-dashoffset: var(--circumference);
+  }
+  to {
+    stroke-dashoffset: var(--score-offset);
+  }
+}
+
+.animate-score-orb-fill {
+  animation: score-orb-fill 1.5s ease-out forwards;
+}
+
+/* Oracle — ScoreOrb pulse glow */
+@keyframes score-orb-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(236, 193, 79, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(236, 193, 79, 0.5));
+  }
+}
+
+.animate-score-orb-pulse {
+  animation: score-orb-pulse 3s ease-in-out infinite;
+}
+
+/* Oracle — Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .animate-score-orb-pulse,
+  .animate-score-orb-fill {
+    animation: none !important;
+  }
+  [style*="animation: flip-in"] {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

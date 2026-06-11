@@ -3,12 +3,100 @@ import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
+import { RepetitionGuard } from '@/lib/brd/repetition';
+import { sanitizeMermaid } from '@/lib/brd/mermaid';
 
 const MAX_INPUT_CHARS = 100_000;
 export const maxDuration = 300;
 export const runtime = 'nodejs';
 
 const ALLOWED_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
+
+type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+
+interface StreamPhaseResult {
+  content: string;
+  reasoning: string;
+  /** True if a repetition loop forced an early abort on every attempt. */
+  looped: boolean;
+}
+
+/**
+ * Run a streaming chat completion guarded against repetition loops.
+ *
+ * Reasoning tokens are forwarded to the client via `onReasoning`. A
+ * RepetitionGuard watches both the reasoning and content streams; if the model
+ * degenerates into a loop ("app app app...") the current attempt is aborted and
+ * retried with anti-repetition sampling (frequency/presence penalties + lower
+ * temperature). After the final attempt we return whatever we have.
+ */
+async function streamGuardedCompletion(
+  openai: OpenAI,
+  model: string,
+  messages: ChatMessage[],
+  onReasoning: (text: string) => void,
+  onStatus: (text: string) => void,
+): Promise<StreamPhaseResult> {
+  const MAX_ATTEMPTS = 2;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const isRetry = attempt > 0;
+    const guard = new RepetitionGuard();
+    let content = '';
+    let reasoning = '';
+    let looped = false;
+
+    const completion = await openai.chat.completions.create({
+      model,
+      messages,
+      temperature: isRetry ? 0.15 : 0.3,
+      // On retry, push the model away from repeating tokens/phrases.
+      ...(isRetry ? { frequency_penalty: 1.0, presence_penalty: 0.6 } : {}),
+      stream: true,
+    });
+
+    try {
+      for await (const chunk of completion) {
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+
+        const reasoningTok = (delta as unknown as { reasoning_content?: string }).reasoning_content;
+        if (reasoningTok) {
+          reasoning += reasoningTok;
+          onReasoning(reasoningTok);
+          if (guard.push(reasoningTok)) {
+            looped = true;
+            break;
+          }
+        }
+
+        if (delta.content) {
+          content += delta.content;
+          if (guard.push(delta.content)) {
+            looped = true;
+            break;
+          }
+        }
+      }
+    } finally {
+      // Stop the underlying request if we bailed out early.
+      if (looped) completion.controller.abort();
+    }
+
+    // Good output, or content already looks like complete JSON — accept it.
+    if (!looped) {
+      return { content, reasoning, looped: false };
+    }
+
+    if (attempt < MAX_ATTEMPTS - 1) {
+      onStatus('Detected a repetition loop — retrying with stricter settings...');
+    } else {
+      return { content, reasoning, looped: true };
+    }
+  }
+
+  return { content: '', reasoning: '', looped: true };
+}
 
 /**
  * Streaming BRD analysis — sends reasoning tokens in real-time via SSE.
@@ -75,34 +163,22 @@ export async function POST(request: NextRequest) {
       try {
         // --- Stream Core prompt (features + flow) ---
         send('phase', 'core');
-        let coreContent = '';
-        let coreReasoning = '';
 
-        const coreStream = await openai.chat.completions.create({
-          model: selectedModel,
-          messages: [
+        const core = await streamGuardedCompletion(
+          openai,
+          selectedModel,
+          [
             { role: 'system', content: 'You are an expert business analyst. Respond only with valid JSON.' },
             { role: 'user', content: buildCorePrompt(trimmedText) },
           ],
-          temperature: 0.3,
-          stream: true,
-        });
+          (tok) => send('reasoning', tok),
+          (msg) => send('status', msg),
+        );
+        const coreContent = core.content;
+        const coreReasoning = core.reasoning;
 
-        for await (const chunk of coreStream) {
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) continue;
-
-          // DeepSeek returns reasoning_content for thinking tokens
-          const reasoning = (delta as unknown as { reasoning_content?: string }).reasoning_content;
-          if (reasoning) {
-            coreReasoning += reasoning;
-            send('reasoning', reasoning);
-          }
-
-          if (delta.content) {
-            coreContent += delta.content;
-            // Don't stream raw JSON content — it's not useful to watch
-          }
+        if (core.looped && !coreContent.trim()) {
+          throw new Error('The Oracle got stuck in a repetition loop and produced no usable output. Please try again.');
         }
 
         send('status', 'Core analysis complete. Processing results...');
@@ -159,31 +235,18 @@ export async function POST(request: NextRequest) {
         // --- Stream Advisory prompt ---
         send('phase', 'advisory');
         send('status', 'Starting advisory analysis...');
-        let advisoryContent = '';
 
-        const advisoryStream = await openai.chat.completions.create({
-          model: selectedModel,
-          messages: [
+        const advisory = await streamGuardedCompletion(
+          openai,
+          selectedModel,
+          [
             { role: 'system', content: 'You are an expert business analyst. Respond only with valid JSON.' },
             { role: 'user', content: buildAdvisoryPrompt(trimmedText) },
           ],
-          temperature: 0.3,
-          stream: true,
-        });
-
-        for await (const chunk of advisoryStream) {
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) continue;
-
-          const reasoning = (delta as unknown as { reasoning_content?: string }).reasoning_content;
-          if (reasoning) {
-            send('reasoning', reasoning);
-          }
-
-          if (delta.content) {
-            advisoryContent += delta.content;
-          }
-        }
+          (tok) => send('reasoning', tok),
+          (msg) => send('status', msg),
+        );
+        const advisoryContent = advisory.content;
 
         send('status', 'Advisory analysis complete. Processing...');
 
@@ -204,7 +267,9 @@ export async function POST(request: NextRequest) {
         const improvements = Array.isArray(advisoryResult.improvements) ? advisoryResult.improvements.slice(0, 15) : [];
         const questions = Array.isArray(advisoryResult.questions) ? advisoryResult.questions.slice(0, 15) : [];
         const riskAnalysis = Array.isArray(advisoryResult.risk_analysis) ? advisoryResult.risk_analysis.slice(0, 15) : [];
-        const architectureDiagram = typeof advisoryResult.architecture_diagram === 'string' ? advisoryResult.architecture_diagram : '';
+        const architectureDiagram = typeof advisoryResult.architecture_diagram === 'string'
+          ? sanitizeMermaid(advisoryResult.architecture_diagram)
+          : '';
         const impactedSystems = Array.isArray(advisoryResult.impacted_systems) ? advisoryResult.impacted_systems.slice(0, 20) : [];
         const fsdDesign = Array.isArray(advisoryResult.fsd_design) ? advisoryResult.fsd_design.slice(0, 20) : [];
 
