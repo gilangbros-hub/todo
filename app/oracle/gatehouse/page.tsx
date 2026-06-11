@@ -199,16 +199,16 @@ export default function GatehousePage() {
       return { text, fileName: selectedFile.name };
     }
 
-    // PDF: send to parse-pdf API
-    const buffer = await selectedFile.arrayBuffer();
-    const base64 = btoa(
-      new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
+    // PDF: send as multipart/form-data to stay under Vercel's 4.5MB payload limit
+    // (base64 encoding inflates size by ~33%)
+    const form = new FormData();
+    form.append('file', selectedFile);
+    form.append('fileName', selectedFile.name);
 
     const res = await fetch('/api/brd/parse-pdf', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64, fileName: selectedFile.name }),
+      body: form,
+      // Do NOT set Content-Type — browser sets it automatically with boundary
     });
 
     if (!res.ok) {
