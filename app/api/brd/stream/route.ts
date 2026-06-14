@@ -11,7 +11,10 @@ import { sanitizeMermaid } from '@/lib/brd/mermaid';
 import { chunkText } from '@/lib/brd/chunking';
 import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
-const MAX_INPUT_CHARS = 1_000_000;
+// Vercel Hobby enforces a 4.5 MB function payload limit.
+// JSON-encoding 300 K chars costs ~600 KB, leaving plenty of headroom.
+// The map-reduce chunking pipeline handles large docs server-side anyway.
+const MAX_INPUT_CHARS = 300_000;
 export const maxDuration = 300;
 export const runtime = 'nodejs';
 

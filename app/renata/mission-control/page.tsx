@@ -182,16 +182,19 @@ export default function MissionControlPage() {
   }, []);
 
   // Read file as text or parse PDF
+  const MAX_TEXT_CHARS = 300_000; // ~600 KB JSON — safely under Vercel's 4.5 MB limit
+
   const getDocumentText = async (): Promise<{ text: string; fileName: string | null }> => {
     if (pasteText.trim()) {
-      return { text: pasteText.trim(), fileName: null };
+      const text = pasteText.trim().slice(0, MAX_TEXT_CHARS);
+      return { text, fileName: null };
     }
 
     if (!selectedFile) throw new Error('No input provided');
 
     if (selectedFile.type === 'text/plain' || selectedFile.name.endsWith('.txt')) {
-      const text = await selectedFile.text();
-      return { text, fileName: selectedFile.name };
+      const raw = await selectedFile.text();
+      return { text: raw.slice(0, MAX_TEXT_CHARS), fileName: selectedFile.name };
     }
 
     const form = new FormData();
@@ -209,7 +212,8 @@ export default function MissionControlPage() {
     }
 
     const data = await res.json();
-    return { text: data.text, fileName: selectedFile.name };
+    // Truncate extracted text to stay under Vercel's payload limit
+    return { text: (data.text as string).slice(0, MAX_TEXT_CHARS), fileName: selectedFile.name };
   };
 
   // Submit analysis

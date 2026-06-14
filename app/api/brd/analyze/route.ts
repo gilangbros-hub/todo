@@ -9,7 +9,10 @@ import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 import { chunkText } from '@/lib/brd/chunking';
 import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
-const MAX_INPUT_CHARS = 1_000_000;
+// Vercel Hobby enforces a 4.5 MB function payload limit.
+// JSON-encoding 300 K chars costs ~600 KB, leaving plenty of headroom.
+// The map-reduce chunking pipeline handles large docs server-side anyway.
+const MAX_INPUT_CHARS = 300_000;
 
 // Allow up to 5 minutes for the analysis (Vercel Pro/Enterprise).
 // On Hobby tier the hard limit is lower; the frontend's 3-min abort still protects us.
