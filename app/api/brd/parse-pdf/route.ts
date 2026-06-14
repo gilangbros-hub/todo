@@ -3,6 +3,12 @@ import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 
 // Use formData upload instead of base64 JSON to stay under
 // Vercel's 4.5 MB serverless function payload limit.
+// NOTE: Files larger than ~4 MB will be rejected by Vercel's edge
+// before reaching this handler. The client-side validation enforces a
+// 4 MB cap with a descriptive error message.
+export const maxDuration = 60;
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();

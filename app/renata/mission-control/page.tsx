@@ -120,12 +120,14 @@ export default function MissionControlPage() {
 
   // File validation
   const validateFile = (file: File): string | null => {
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    // Vercel Hobby enforces a 4.5 MB function payload limit.
+    // Leave 0.5 MB headroom for FormData multipart encoding overhead.
+    const maxSize = 4 * 1024 * 1024; // 4 MB
     const allowedTypes = ['application/pdf', 'text/plain'];
     const allowedExtensions = ['.pdf', '.txt'];
 
     if (file.size > maxSize) {
-      return 'File exceeds 10MB limit. Please use a smaller file.';
+      return `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — exceeds the 4 MB limit (Vercel serverless payload cap). Please reduce the file size.`;
     }
 
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
@@ -206,9 +208,19 @@ export default function MissionControlPage() {
       body: form,
     });
 
+    if (res.status === 413) {
+      throw new Error('File is too large for Vercel\'s serverless function limit (4.5 MB). Please reduce the file size below 4 MB and try again.');
+    }
+
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to parse PDF');
+      let message = 'Failed to parse PDF';
+      try {
+        const err = await res.json();
+        message = err.error || message;
+      } catch {
+        // Response body is not JSON (e.g. Vercel error page)
+      }
+      throw new Error(message);
     }
 
     const data = await res.json();
@@ -245,6 +257,10 @@ export default function MissionControlPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, title, fileName, model }),
       });
+
+      if (response.status === 413) {
+        throw new Error('Document text is too large for analysis. Please reduce the document size and try again.');
+      }
 
       if (!response.ok) {
         const err = await response.json();
