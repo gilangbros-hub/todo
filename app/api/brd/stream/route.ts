@@ -8,6 +8,7 @@ import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
 import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 import { RepetitionGuard } from '@/lib/brd/repetition';
 import { sanitizeMermaid } from '@/lib/brd/mermaid';
+import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 import { chunkText } from '@/lib/brd/chunking';
 import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
@@ -124,13 +125,13 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: 'Invalid input' }), { status: 400 });
   }
 
-  const cleanText = text
+  let cleanText = text
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]')
-    .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]')
     .trim();
+
+  cleanText = sanitizeImageReferences(cleanText);
 
   if (cleanText.length < 50) {
     return new Response(JSON.stringify({ error: 'Document contains no readable text after sanitization' }), { status: 400 });
@@ -209,6 +210,7 @@ export async function POST(request: NextRequest) {
 
           const extractedContents = await Promise.all(extractionPromises);
           finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
+          finalAnalysisText = sanitizeImageReferences(finalAnalysisText);
           send('status', 'Extraction complete. Starting distilled core analysis...');
         } else {
           send('status', 'Starting core analysis...');

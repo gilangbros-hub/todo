@@ -6,6 +6,7 @@ import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
 import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
 import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
 import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
+import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 import { chunkText } from '@/lib/brd/chunking';
 import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
@@ -45,13 +46,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No document title provided' }, { status: 400 });
     }
 
-    const trimmedText = text
+    let trimmedText = text
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
-      .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]')
-      .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]')
       .trim();
+
+    trimmedText = sanitizeImageReferences(trimmedText);
 
     if (trimmedText.length < 50) {
       return NextResponse.json({ error: 'Document text is too short (minimum 50 characters)' }, { status: 400 });
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
       });
       const extractedContents = await Promise.all(extractionPromises);
       finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
+      finalAnalysisText = sanitizeImageReferences(finalAnalysisText);
     }
 
     // Helper: call DeepSeek and parse JSON

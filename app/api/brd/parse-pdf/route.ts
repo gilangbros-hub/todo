@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 
 // Use formData upload instead of base64 JSON to stay under
 // Vercel's 4.5 MB serverless function payload limit.
@@ -33,14 +34,11 @@ export async function POST(request: NextRequest) {
       .replace(/\r\n/g, '\n') // normalize line endings
       .replace(/\r/g, '\n')
       .replace(/<<\/[A-Za-z]+\s*\/[A-Za-z]+\s*\d+\s*\d+\s*R>>/g, '') // PDF object refs
-      .replace(/\/Im\d+\s+Do/gi, '') // PDF inline image references
-      .replace(/\/Im\d+/gi, '') // PDF image object names
       .replace(/\/[A-Za-z]+\s+\d+\s+\d+\s+R/gi, '') // PDF reference patterns
-      .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]') // any image filename
-      .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]') // [image: file.png] patterns
       .replace(/[^\S\n]+/g, ' ') // collapse multiple spaces (preserve newlines)
-      .replace(/\n{3,}/g, '\n\n') // collapse multiple blank lines
-      .trim();
+      .replace(/\n{3,}/g, '\n\n'); // collapse multiple blank lines
+
+    cleanText = sanitizeImageReferences(cleanText).trim();
 
     if (cleanText.length < 10) {
       return NextResponse.json(
