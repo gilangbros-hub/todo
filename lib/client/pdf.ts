@@ -1,53 +1,126 @@
-const CHUNK_TARGET = 3.5 * 1024 * 1024; // 3.5 MB target — safe under Vercel's 4.5 MB limit
-const MIN_PAGES = 1;
+// Vercel Hobby: 4.5 MB function payload.  FormData multipart encoding adds
+// ~30 % overhead, so keep raw chunks under ~3.2 MB to stay well clear of 413s.
+const MAX_CHUNK_BYTES = 3.2 * 1024 * 1024;
+const STRIDE = 5; // trial-save every N pages to avoid O(n^2) for large docs
+
+interface PdfLib {
+  PDFDocument: {
+    create: () => PdfDoc;
+    load: (buf: ArrayBuffer, opts?: { ignoreEncryption?: boolean }) => Promise<PdfDoc>;
+  };
+}
+
+interface PdfDoc {
+  getPageCount: () => number;
+  copyPages: (src: PdfDoc, indices: number[]) => Promise<PdfPage[]>;
+  addPage: (page: PdfPage) => void;
+  save: () => Promise<Uint8Array>;
+}
+
+interface PdfPage { /* opaque — used only through copyPages / addPage */ }
+
+async function loadLib(): Promise<PdfLib> {
+  return await import('pdf-lib') as unknown as PdfLib;
+}
+
+async function measureSubset(
+  pdfLib: PdfLib,
+  sourcePdf: PdfDoc,
+  pageIndices: number[],
+): Promise<number> {
+  const doc = await pdfLib.PDFDocument.create();
+  const copied = await doc.copyPages(sourcePdf, pageIndices);
+  copied.forEach((pg) => doc.addPage(pg));
+  const bytes = await doc.save();
+  return bytes.byteLength;
+}
+
+async function saveSubset(
+  pdfLib: PdfLib,
+  sourcePdf: PdfDoc,
+  pageIndices: number[],
+  baseName: string,
+  partNum: number,
+): Promise<File> {
+  const doc = await pdfLib.PDFDocument.create();
+  const copied = await doc.copyPages(sourcePdf, pageIndices);
+  copied.forEach((pg) => doc.addPage(pg));
+  const bytes = await doc.save();
+  return new File(
+    [new Uint8Array(bytes)],
+    baseName.replace(/\.pdf$/i, `_part${partNum}.pdf`),
+    { type: 'application/pdf' },
+  );
+}
+
+type ChunkSpec = { indices: number[] };
 
 /**
  * Split a PDF file into smaller chunks so each chunk stays under Vercel's
- * serverless function payload limit (4.5 MB).  Returns the chunks as File
- * objects ready for upload, or a single-element array if no split is needed.
+ * serverless function payload limit.  Returns the chunks as File objects
+ * ready for upload, or a single-element array if no split is needed.
  */
 export async function splitPdf(
   file: File,
-  onProgress?: (done: number, total: number) => void,
+  onChunk?: (done: number) => void,
 ): Promise<File[]> {
-  const { PDFDocument } = await import('pdf-lib');
+  const pdfLib = await loadLib();
   const arrayBuffer = await file.arrayBuffer();
-  const sourcePdf = await PDFDocument.load(arrayBuffer, {
+  const sourcePdf = await pdfLib.PDFDocument.load(arrayBuffer, {
     ignoreEncryption: true,
   });
   const pageCount = sourcePdf.getPageCount();
 
-  if (pageCount <= MIN_PAGES) return [file];
+  // Build chunks greedily: step forward STRIDE pages at a time, then
+  // binary-search the exact split point when the accumulated size exceeds
+  // the byte limit.
+  const specs: ChunkSpec[] = [];
+  let cursor = 0;
 
-  const avgPageSize = file.size / pageCount;
-  const pagesPerChunk = Math.max(MIN_PAGES, Math.floor(CHUNK_TARGET / avgPageSize));
+  while (cursor < pageCount) {
+    let lo = cursor;
+    let hi = pageCount + 1;
 
-  if (pagesPerChunk >= pageCount) return [file];
+    for (let p = cursor; p < pageCount; p += STRIDE) {
+      const trial = Array.from({ length: p + 1 - cursor }, (_, i) => cursor + i);
+      const size = await measureSubset(pdfLib, sourcePdf, trial);
+      if (size <= MAX_CHUNK_BYTES) {
+        lo = p + 1;
+      } else {
+        hi = p + 1;
+        break;
+      }
+    }
+    if (hi > pageCount) hi = pageCount + 1;
 
-  const totalChunks = Math.ceil(pageCount / pagesPerChunk);
-  const chunks: File[] = [];
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      const trial = Array.from({ length: mid - cursor }, (_, i) => cursor + i);
+      const size = await measureSubset(pdfLib, sourcePdf, trial);
+      if (size <= MAX_CHUNK_BYTES) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
 
-  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-    const start = chunkIdx * pagesPerChunk;
-    const end = Math.min(start + pagesPerChunk, pageCount);
-    const pageIndices = Array.from({ length: end - start }, (_, i) => start + i);
+    if (lo === cursor) {
+      lo = cursor + 1;
+    }
 
-    const chunkDoc = await PDFDocument.create();
-    const copied = await chunkDoc.copyPages(sourcePdf, pageIndices);
-    copied.forEach((p) => chunkDoc.addPage(p));
-
-    const chunkBytes = await chunkDoc.save();
-    const partNum = chunkIdx + 1;
-    const chunkFile = new File(
-      [new Uint8Array(chunkBytes)],
-      file.name.replace(/\.pdf$/i, `_part${partNum}.pdf`),
-      { type: 'application/pdf' },
-    );
-    chunks.push(chunkFile);
-    onProgress?.(partNum, totalChunks);
+    const indices = Array.from({ length: lo - cursor }, (_, i) => cursor + i);
+    specs.push({ indices });
+    cursor = lo;
   }
 
-  return chunks;
+  const chunks: File[] = [];
+  for (let i = 0; i < specs.length; i++) {
+    const chunkFile = await saveSubset(pdfLib, sourcePdf, specs[i].indices, file.name, i + 1);
+    chunks.push(chunkFile);
+    onChunk?.(i + 1);
+  }
+
+  return chunks.length > 0 ? chunks : [file];
 }
 
 type ParsePdfResult = { text: string; pages?: number };
@@ -91,12 +164,10 @@ export async function parsePdfWithSplit(
   file: File,
   onProgress?: (msg: string) => void,
 ): Promise<{ text: string; fileName: string }> {
-  const chunks = await splitPdf(file, (done, total) => {
-    onProgress?.(`Splitting PDF... part ${done}/${total}`);
+  const chunks = await splitPdf(file, (done) => {
+    onProgress?.(`Splitting PDF... part ${done}`);
   });
 
-  // Single chunk — no splitting needed, but still enforce the 300 K char cap
-  // that the mission-control page expects.
   const MAX_TEXT_CHARS = 300_000;
   if (chunks.length === 1) {
     const result = await parseChunk(chunks[0], file.name);
