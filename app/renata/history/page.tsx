@@ -1,13 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { History, Loader, ExternalLink, Trash2 } from 'lucide-react';
+import { History, Loader, ExternalLink, Trash2, AlertCircle } from 'lucide-react';
 import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
 import { StatusBadge } from '@/components/renata/StatusBadge';
 
 export default function HistoryPage() {
   const router = useRouter();
-  const { documents, isLoading, handleDelete, handleView } = useBrdDocuments();
+  const { documents, isLoading, error, handleDelete, handleView } = useBrdDocuments();
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -15,6 +15,13 @@ export default function HistoryPage() {
         <h2 className="font-outfit text-2xl font-bold text-sys-text">Analysis History</h2>
         <p className="font-geist text-sm text-sys-muted mt-1">All uploaded BRD documents and their analysis results.</p>
       </div>
+
+      {error && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-sys-error/10 border border-sys-error/20 rounded-xl text-sys-error text-sm font-geist">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-12">

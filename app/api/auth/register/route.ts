@@ -3,17 +3,29 @@ import { createClient } from '@/lib/supabase/server';
 import { validateRegistrationInput } from '@/lib/auth/validation';
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const validation = validateRegistrationInput(body);
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  const input = {
+    email: typeof body.email === 'string' ? body.email : undefined,
+    password: typeof body.password === 'string' ? body.password : undefined,
+    confirmPassword: typeof body.confirmPassword === 'string' ? body.confirmPassword : undefined,
+  };
+  const validation = validateRegistrationInput(input);
 
   if (!validation.valid) {
     return NextResponse.json({ errors: validation.errors }, { status: 400 });
   }
 
+  const reqBody = input as { email: string; password: string };
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
-    email: body.email.trim(),
-    password: body.password,
+    email: reqBody.email.trim(),
+    password: reqBody.password,
   });
 
   if (error) {
@@ -24,15 +36,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // User registered successfully
   if (data.user) {
-    await supabase.from('player_stats').insert({
+    const { error: statsError } = await supabase.from('player_stats').insert({
       user_id: data.user.id,
       xp: 0,
       level: 1,
       streak: 0,
       last_completed_date: null,
     });
+
+    if (statsError) {
+      console.error('Player stats init failed:', statsError.message);
+    }
   }
 
   return NextResponse.json({ success: true });

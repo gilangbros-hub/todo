@@ -39,9 +39,10 @@ export default function MissionControlPage() {
   const reasoningEndRef = useRef<HTMLDivElement>(null);
 
   // Document history
-  const { documents, isLoading: isLoadingDocs, handleDelete: handleDeleteDocument, handleView: handleViewDocument } = useBrdDocuments({ limit: 5 });
+  const { documents, isLoading: isLoadingDocs, error: historyError, handleDelete: handleDeleteDocument, handleView: handleViewDocument } = useBrdDocuments({ limit: 5 });
 
   const hasInput = selectedFile !== null || pasteText.trim().length > 0;
+
 
   // Elapsed time counter
   useEffect(() => {
@@ -444,6 +445,13 @@ export default function MissionControlPage() {
             </button>
           </div>
           
+          {historyError && (
+            <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-sys-error/10 border border-sys-error/20 rounded-xl text-sys-error text-sm font-geist">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              <span>{historyError}</span>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[600px]">
               <thead>

@@ -16,14 +16,17 @@ export function useBrdDocuments(options: UseBrdDocumentsOptions = {}) {
   const { setActiveDocument } = useRenata();
   const [documents, setDocuments] = useState<BrdDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const docs = await getBrdDocuments();
       setDocuments(limit ? docs.slice(0, limit) : docs);
     } catch (err) {
-      console.error('Failed to fetch documents:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to load documents';
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -35,10 +38,12 @@ export function useBrdDocuments(options: UseBrdDocumentsOptions = {}) {
 
   const handleDelete = useCallback(async (id: string) => {
     try {
+      setError(null);
       await deleteBrdDocument(id);
       await fetchDocuments();
     } catch (err) {
-      console.error('Failed to delete document:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to delete document';
+      setError(msg);
     }
   }, [fetchDocuments]);
 
@@ -47,5 +52,5 @@ export function useBrdDocuments(options: UseBrdDocumentsOptions = {}) {
     router.push('/renata/results');
   }, [setActiveDocument, router]);
 
-  return { documents, isLoading, fetchDocuments, handleDelete, handleView };
+  return { documents, isLoading, error, fetchDocuments, handleDelete, handleView };
 }

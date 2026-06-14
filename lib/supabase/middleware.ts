@@ -25,7 +25,12 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error) {
+    // Treat auth errors (expired token, network issue) as unauthenticated
+    return { user: null, supabaseResponse };
+  }
 
   return { user, supabaseResponse };
 }
