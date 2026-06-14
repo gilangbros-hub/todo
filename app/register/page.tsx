@@ -69,10 +69,9 @@ export default function RegisterPage() {
   return (
     <AuthCard>
       <h1
-        className="font-pixel text-lg text-rpg-legendary text-center mb-8"
-        style={{ textShadow: "2px 2px 0px #000" }}
+        className="font-outfit text-2xl text-center text-sys-text font-semibold mb-8"
       >
-        Create Your Hero
+        Create Account
       </h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -85,7 +84,7 @@ export default function RegisterPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={fieldErrors.email}
-          placeholder="hero@questboard.gg"
+          placeholder="email@example.com"
           autoComplete="email"
         />
 
@@ -112,17 +111,17 @@ export default function RegisterPage() {
         />
 
         <AuthButton type="submit" loading={loading}>
-          Begin Adventure
+          Create Account
         </AuthButton>
       </form>
 
-      <p className="text-center mt-6 font-retro text-lg text-gray-400">
-        Already a hero?{" "}
+      <p className="text-center mt-6 font-geist text-sm text-sys-muted">
+        Already have an account?{" "}
         <Link
           href="/login"
-          className="text-rpg-legendary hover:underline"
+          className="text-sys-primary hover:underline font-medium"
         >
-          Enter the Realm
+          Sign In
         </Link>
       </p>
     </AuthCard>

@@ -3,8 +3,13 @@ import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
+import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
+import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
+import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
+import { chunkText } from '@/lib/brd/chunking';
+import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
-const MAX_INPUT_CHARS = 100_000;
+const MAX_INPUT_CHARS = 1_000_000;
 
 // Allow up to 5 minutes for the analysis (Vercel Pro/Enterprise).
 // On Hobby tier the hard limit is lower; the frontend's 3-min abort still protects us.
@@ -26,11 +31,10 @@ export async function POST(request: NextRequest) {
       model?: string;
     };
 
-    // Validate model — only allow known DeepSeek models
     const ALLOWED_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
     const selectedModel = model && ALLOWED_MODELS.includes(model) ? model : 'deepseek-v4-pro';
 
-    // Validate input
+    // Validate and sanitize input
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: 'No document text provided' }, { status: 400 });
     }
@@ -38,7 +42,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No document title provided' }, { status: 400 });
     }
 
-    const trimmedText = text.trim();
+    const trimmedText = text
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]')
+      .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]')
+      .trim();
+
     if (trimmedText.length < 50) {
       return NextResponse.json({ error: 'Document text is too short (minimum 50 characters)' }, { status: 400 });
     }
@@ -48,11 +59,14 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Oracle is not configured. Missing API key.' }, { status: 500 });
+      return NextResponse.json({ error: 'Renata is not configured. Missing DeepSeek API key.' }, { status: 500 });
     }
 
     const supabase = await createClient();
-    const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey });
+    const openai = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey,
+    });
 
     // Create document record with status 'analyzing'
     const { data: doc, error: docError } = await supabase
@@ -73,12 +87,34 @@ export async function POST(request: NextRequest) {
 
     const documentId = doc.id;
 
+    // --- Map-Reduce Chunking Phase ---
+    let finalAnalysisText = trimmedText;
+
+    if (trimmedText.length > 25000) {
+      const chunks = chunkText(trimmedText, 25000, 1000);
+      const extractionPromises = chunks.map(async (chunk) => {
+        try {
+          const res = await openai.chat.completions.create({
+            model: 'deepseek-chat', // Fast model for extraction
+            messages: [{ role: 'user', content: buildExtractionPrompt(chunk.content, chunk.index, chunks.length) }],
+            temperature: 0.1,
+          });
+          return res.choices[0]?.message?.content || '';
+        } catch (err) {
+          console.error(`Chunk ${chunk.index} failed:`, err);
+          return '';
+        }
+      });
+      const extractedContents = await Promise.all(extractionPromises);
+      finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
+    }
+
     // Helper: call DeepSeek and parse JSON
     const callLLM = async (prompt: string): Promise<unknown> => {
       const completion = await openai.chat.completions.create({
         model: selectedModel,
         messages: [
-          { role: 'system', content: 'You are an expert business analyst. Respond only with valid JSON.' },
+          { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
@@ -93,7 +129,7 @@ export async function POST(request: NextRequest) {
     };
 
     // --- Core section: features + flow process ---
-    const corePromise = callLLM(buildCorePrompt(trimmedText))
+    const corePromise = callLLM(buildCorePrompt(finalAnalysisText))
       .then(async (result) => {
         const core = result as { features?: unknown[]; flow_process?: unknown[] };
         const features = Array.isArray(core.features) ? core.features.slice(0, 20) : [];
@@ -112,23 +148,26 @@ export async function POST(request: NextRequest) {
         if (features.length > 0) {
           const featureRows = (features as Record<string, unknown>[]).map((f) => ({
             document_id: documentId,
+            feature_id: typeof f.feature_id === 'string' ? f.feature_id.slice(0, 50) : 'F-UNKNOWN',
             name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
-            description: typeof f.description === 'string' ? f.description.slice(0, 800) : null,
-            pilot_status: 'unknown',
-            retention: null,
-            business_flow: typeof f.business_flow === 'string' ? f.business_flow : null,
-            as_is: typeof f.as_is === 'string' ? f.as_is : null,
-            to_be: typeof f.to_be === 'string' ? f.to_be : null,
-            risks: typeof f.risks === 'string' ? f.risks : null,
-            suggested_priority: ['normal', 'rare', 'epic', 'legendary'].includes(String(f.suggested_priority))
-              ? f.suggested_priority : 'normal',
-            requirement_type: String(f.requirement_type || '').toLowerCase().replace(/-/g, '_').includes('non_functional') ? 'non_functional' : 'functional',
-            precondition: typeof f.precondition === 'string' ? f.precondition : null,
-            postcondition: typeof f.postcondition === 'string' ? f.postcondition : null,
-            user_roles: Array.isArray(f.user_roles) ? f.user_roles.filter((r: unknown) => typeof r === 'string') : [],
-            impacted_process: typeof f.impacted_process === 'string' ? f.impacted_process : null,
-            scope: ['in_scope', 'out_of_scope'].includes(String(f.scope)) ? f.scope : 'unknown',
-            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : null,
+            description: typeof f.description === 'string' ? f.description.slice(0, 800) : '',
+            requirement_classification: (() => {
+              const raw = String(f.requirement_classification || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+              const valid = ['business_requirement', 'stakeholder_requirement', 'functional_requirement', 'non_functional_requirement', 'transition_requirement'];
+              if (valid.includes(raw)) return raw;
+              return 'functional_requirement';
+            })(),
+            priority_moscow: ['must_have', 'should_have', 'could_have', 'wont_have'].includes(String(f.priority_moscow))
+              ? f.priority_moscow : 'should_have',
+            business_value: typeof f.business_value === 'string' ? f.business_value : '',
+            capability_gap: typeof f.capability_gap === 'string' ? f.capability_gap : '',
+            business_rules: Array.isArray(f.business_rules) ? f.business_rules.filter((r: unknown) => typeof r === 'string') : [],
+            stakeholders: Array.isArray(f.stakeholders) ? f.stakeholders.filter((r: unknown) => typeof r === 'string') : [],
+            preconditions: typeof f.preconditions === 'string' ? f.preconditions : '',
+            postconditions: typeof f.postconditions === 'string' ? f.postconditions : '',
+            acceptance_criteria: Array.isArray(f.acceptance_criteria) ? f.acceptance_criteria.filter((r: unknown) => typeof r === 'string') : [],
+            dependencies_and_risks: typeof f.dependencies_and_risks === 'string' ? f.dependencies_and_risks : '',
+            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
           }));
           const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
           if (featErr) console.error('Feature insert failed:', featErr);
@@ -144,22 +183,22 @@ export async function POST(request: NextRequest) {
       });
 
     // --- Advisory section: improvements + questions + risks + architecture + impacted systems + FSD ---
-    const advisoryPromise = callLLM(buildAdvisoryPrompt(trimmedText))
+    const advisoryPromise = callLLM(buildAdvisoryPrompt(finalAnalysisText))
       .then(async (result) => {
         const adv = result as {
-          improvements?: unknown[];
-          questions?: unknown[];
-          risk_analysis?: unknown[];
-          architecture_diagram?: string;
-          impacted_systems?: unknown[];
-          fsd_design?: unknown[];
+          IMPROVEMENTS?: unknown[];
+          QUESTIONS?: unknown[];
+          RISK_ANALYSIS?: unknown[];
+          CONTEXT_DIAGRAM?: string;
+          IMPACTED_COMPONENTS?: unknown[];
+          USE_CASE_SCENARIOS?: unknown[];
         };
-        const improvements = Array.isArray(adv.improvements) ? adv.improvements.slice(0, 15) : [];
-        const questions = Array.isArray(adv.questions) ? adv.questions.slice(0, 15) : [];
-        const riskAnalysis = Array.isArray(adv.risk_analysis) ? adv.risk_analysis.slice(0, 15) : [];
-        const architectureDiagram = typeof adv.architecture_diagram === 'string' ? adv.architecture_diagram : '';
-        const impactedSystems = Array.isArray(adv.impacted_systems) ? adv.impacted_systems.slice(0, 20) : [];
-        const fsdDesign = Array.isArray(adv.fsd_design) ? adv.fsd_design.slice(0, 20) : [];
+        const improvements = Array.isArray(adv.IMPROVEMENTS) ? adv.IMPROVEMENTS.slice(0, 15) : [];
+        const questions = Array.isArray(adv.QUESTIONS) ? adv.QUESTIONS.slice(0, 15) : [];
+        const riskAnalysis = Array.isArray(adv.RISK_ANALYSIS) ? adv.RISK_ANALYSIS.slice(0, 15) : [];
+        const contextDiagram = typeof adv.CONTEXT_DIAGRAM === 'string' ? adv.CONTEXT_DIAGRAM : '';
+        const impactedComponents = Array.isArray(adv.IMPACTED_COMPONENTS) ? adv.IMPACTED_COMPONENTS.slice(0, 20) : [];
+        const useCaseScenarios = Array.isArray(adv.USE_CASE_SCENARIOS) ? adv.USE_CASE_SCENARIOS.slice(0, 20) : [];
 
         const { error: updErr } = await supabase
           .from('brd_documents')
@@ -167,9 +206,9 @@ export async function POST(request: NextRequest) {
             improvements,
             questions,
             risk_analysis: riskAnalysis,
-            architecture_diagram: architectureDiagram,
-            impacted_systems: impactedSystems,
-            fsd_design: fsdDesign,
+            context_diagram: contextDiagram,
+            impacted_components: impactedComponents,
+            use_case_scenarios: useCaseScenarios,
           })
           .eq('id', documentId);
         if (updErr) console.error('Advisory update failed:', updErr);
@@ -177,20 +216,38 @@ export async function POST(request: NextRequest) {
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'improvements' });
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'questions' });
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'risk_analysis' });
-        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'architecture' });
-        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'impacted_systems' });
-        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'fsd_design' });
+        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'context_diagram' });
+        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'impacted_components' });
+        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'use_case_scenarios' });
 
-        return { improvements, questions, riskAnalysis, architectureDiagram, impactedSystems, fsdDesign };
+        return { improvements, questions, riskAnalysis, contextDiagram, impactedComponents, useCaseScenarios };
       })
       .catch(async (err) => {
         console.error('Advisory prompt failed:', err);
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'advisory_error' });
-        return { improvements: [], questions: [], riskAnalysis: [], architectureDiagram: '', impactedSystems: [], fsdDesign: [] };
+        return { improvements: [], questions: [], riskAnalysis: [], contextDiagram: '', impactedComponents: [], useCaseScenarios: [] };
       });
 
-    // Wait for both, then mark final status
+    // Wait for both, then run additional prompts
     const [coreRes, advisoryRes] = await Promise.all([corePromise, advisoryPromise]);
+
+    // Run discovery, optimization, and solutions prompts in parallel
+    try {
+      const featuresJson = JSON.stringify(coreRes.features.map((f: any) => ({
+        id: f.feature_id,
+        name: f.name,
+        description: f.description,
+      })));
+
+      await Promise.all([
+        callLLM(buildDiscoveryPrompt(finalAnalysisText, featuresJson)),
+        callLLM(buildOptimizationPrompt(finalAnalysisText, featuresJson)),
+        callLLM(buildSolutionsPrompt(finalAnalysisText, featuresJson)),
+      ]);
+    } catch (err) {
+      // Non-critical, mock data will be used in frontend
+      console.error('Additional prompts failed:', err);
+    }
 
     await supabase
       .from('brd_documents')
@@ -205,13 +262,13 @@ export async function POST(request: NextRequest) {
       improvements: advisoryRes.improvements,
       questions: advisoryRes.questions,
       risk_analysis: advisoryRes.riskAnalysis,
-      architecture_diagram: advisoryRes.architectureDiagram,
-      impacted_systems: advisoryRes.impactedSystems,
-      fsd_design: advisoryRes.fsdDesign,
+      context_diagram: advisoryRes.contextDiagram,
+      impacted_components: advisoryRes.impactedComponents,
+      use_case_scenarios: advisoryRes.useCaseScenarios,
     });
   } catch (error) {
     console.error('BRD analysis error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: `Oracle failed: ${message}` }, { status: 500 });
+    return NextResponse.json({ error: `Analysis failed: ${message}` }, { status: 500 });
   }
 }

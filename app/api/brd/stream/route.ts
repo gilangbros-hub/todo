@@ -3,10 +3,15 @@ import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
+import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
+import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
+import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 import { RepetitionGuard } from '@/lib/brd/repetition';
 import { sanitizeMermaid } from '@/lib/brd/mermaid';
+import { chunkText } from '@/lib/brd/chunking';
+import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 
-const MAX_INPUT_CHARS = 100_000;
+const MAX_INPUT_CHARS = 1_000_000;
 export const maxDuration = 300;
 export const runtime = 'nodejs';
 
@@ -100,7 +105,7 @@ async function streamGuardedCompletion(
 
 /**
  * Streaming BRD analysis — sends reasoning tokens in real-time via SSE.
- * The client sees the Oracle "thinking" live, then gets the final result.
+ * The client sees live analysis progress, then gets the final result.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -111,24 +116,40 @@ export async function POST(request: NextRequest) {
     model?: string;
   };
 
-  // Validate
+  // Validate and sanitize input
   if (!text || typeof text !== 'string' || text.trim().length < 50) {
     return new Response(JSON.stringify({ error: 'Invalid input' }), { status: 400 });
   }
-  if (text.trim().length > MAX_INPUT_CHARS) {
+
+  const cleanText = text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]')
+    .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]')
+    .trim();
+
+  if (cleanText.length < 50) {
+    return new Response(JSON.stringify({ error: 'Document contains no readable text after sanitization' }), { status: 400 });
+  }
+  if (cleanText.length > MAX_INPUT_CHARS) {
     return new Response(JSON.stringify({ error: 'Text too long' }), { status: 400 });
   }
 
+  const selectedModel = model && ALLOWED_MODELS.includes(model) ? model : 'deepseek-v4-pro';
+
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Missing API key' }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'Missing DeepSeek API key' }), { status: 500 });
   }
 
-  const selectedModel = model && ALLOWED_MODELS.includes(model) ? model : 'deepseek-v4-pro';
-  const trimmedText = text.trim();
-
+  const trimmedText = cleanText;
   const supabase = await createClient();
-  const openai = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey });
+
+  const openai = new OpenAI({
+    baseURL: 'https://api.deepseek.com',
+    apiKey,
+  });
 
   // Create document record
   const { data: doc, error: docError } = await supabase
@@ -158,9 +179,38 @@ export async function POST(request: NextRequest) {
       };
 
       send('doc_id', documentId);
-      send('status', 'Starting core analysis...');
 
       try {
+        let finalAnalysisText = trimmedText;
+
+        if (trimmedText.length > 25000) {
+          send('phase', 'chunking');
+          send('status', 'Document is large. Splitting for parallel extraction...');
+          
+          const chunks = chunkText(trimmedText, 25000, 1000);
+          send('status', `Processing ${chunks.length} chunks in parallel...`);
+
+          const extractionPromises = chunks.map(async (chunk) => {
+            try {
+              const res = await openai.chat.completions.create({
+                model: 'deepseek-chat', // Fast, cheap model for extraction
+                messages: [{ role: 'user', content: buildExtractionPrompt(chunk.content, chunk.index, chunks.length) }],
+                temperature: 0.1,
+              });
+              return res.choices[0]?.message?.content || '';
+            } catch (err) {
+              console.error(`Chunk ${chunk.index} failed:`, err);
+              return ''; // Gracefully fail chunk
+            }
+          });
+
+          const extractedContents = await Promise.all(extractionPromises);
+          finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
+          send('status', 'Extraction complete. Starting distilled core analysis...');
+        } else {
+          send('status', 'Starting core analysis...');
+        }
+
         // --- Stream Core prompt (features + flow) ---
         send('phase', 'core');
 
@@ -168,8 +218,8 @@ export async function POST(request: NextRequest) {
           openai,
           selectedModel,
           [
-            { role: 'system', content: 'You are an expert business analyst. Respond only with valid JSON.' },
-            { role: 'user', content: buildCorePrompt(trimmedText) },
+            { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
+            { role: 'user', content: buildCorePrompt(finalAnalysisText) },
           ],
           (tok) => send('reasoning', tok),
           (msg) => send('status', msg),
@@ -178,7 +228,7 @@ export async function POST(request: NextRequest) {
         const coreReasoning = core.reasoning;
 
         if (core.looped && !coreContent.trim()) {
-          throw new Error('The Oracle got stuck in a repetition loop and produced no usable output. Please try again.');
+          throw new Error('Renata got stuck in a repetition loop and produced no usable output. Please try again.');
         }
 
         send('status', 'Core analysis complete. Processing results...');
@@ -207,24 +257,27 @@ export async function POST(request: NextRequest) {
         if (features.length > 0) {
           const featureRows = (features as Record<string, unknown>[]).map((f) => ({
             document_id: documentId,
+            feature_id: typeof f.feature_id === 'string' ? f.feature_id.slice(0, 50) : 'F-UNKNOWN',
             name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
-            description: typeof f.description === 'string' ? f.description.slice(0, 800) : null,
-            pilot_status: 'unknown',
-            retention: null,
-            business_flow: typeof f.business_flow === 'string' ? f.business_flow : null,
-            as_is: typeof f.as_is === 'string' ? f.as_is : null,
-            to_be: typeof f.to_be === 'string' ? f.to_be : null,
-            risks: typeof f.risks === 'string' ? f.risks : null,
-            suggested_priority: ['normal', 'rare', 'epic', 'legendary'].includes(String(f.suggested_priority))
-              ? f.suggested_priority : 'normal',
-            requirement_type: String(f.requirement_type || '').toLowerCase().replace(/-/g, '_').includes('non_functional')
-              ? 'non_functional' : 'functional',
-            precondition: typeof f.precondition === 'string' ? f.precondition : null,
-            postcondition: typeof f.postcondition === 'string' ? f.postcondition : null,
-            user_roles: Array.isArray(f.user_roles) ? f.user_roles.filter((r: unknown) => typeof r === 'string') : [],
-            impacted_process: typeof f.impacted_process === 'string' ? f.impacted_process : null,
-            scope: ['in_scope', 'out_of_scope'].includes(String(f.scope)) ? f.scope : 'unknown',
-            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : null,
+            description: typeof f.description === 'string' ? f.description.slice(0, 800) : '',
+            requirement_classification: (() => {
+              const raw = String(f.requirement_classification || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+              const valid = ['business_requirement', 'stakeholder_requirement', 'functional_requirement', 'non_functional_requirement', 'transition_requirement'];
+              if (valid.includes(raw)) return raw;
+              console.warn('Rejected requirement_classification, falling back to functional_requirement:', f.requirement_classification);
+              return 'functional_requirement';
+            })(),
+            priority_moscow: ['must_have', 'should_have', 'could_have', 'wont_have'].includes(String(f.priority_moscow))
+              ? f.priority_moscow : 'should_have',
+            business_value: typeof f.business_value === 'string' ? f.business_value : '',
+            capability_gap: typeof f.capability_gap === 'string' ? f.capability_gap : '',
+            business_rules: Array.isArray(f.business_rules) ? f.business_rules.filter((r: unknown) => typeof r === 'string') : [],
+            stakeholders: Array.isArray(f.stakeholders) ? f.stakeholders.filter((r: unknown) => typeof r === 'string') : [],
+            preconditions: typeof f.preconditions === 'string' ? f.preconditions : '',
+            postconditions: typeof f.postconditions === 'string' ? f.postconditions : '',
+            acceptance_criteria: Array.isArray(f.acceptance_criteria) ? f.acceptance_criteria.filter((r: unknown) => typeof r === 'string') : [],
+            dependencies_and_risks: typeof f.dependencies_and_risks === 'string' ? f.dependencies_and_risks : '',
+            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
           }));
           await supabase.from('brd_features').insert(featureRows);
         }
@@ -240,8 +293,8 @@ export async function POST(request: NextRequest) {
           openai,
           selectedModel,
           [
-            { role: 'system', content: 'You are an expert business analyst. Respond only with valid JSON.' },
-            { role: 'user', content: buildAdvisoryPrompt(trimmedText) },
+            { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
+            { role: 'user', content: buildAdvisoryPrompt(finalAnalysisText) },
           ],
           (tok) => send('reasoning', tok),
           (msg) => send('status', msg),
@@ -264,23 +317,23 @@ export async function POST(request: NextRequest) {
           send('error', `Advisory JSON parse failed: ${(e as Error).message}`);
         }
 
-        const improvements = Array.isArray(advisoryResult.improvements) ? advisoryResult.improvements.slice(0, 15) : [];
-        const questions = Array.isArray(advisoryResult.questions) ? advisoryResult.questions.slice(0, 15) : [];
-        const riskAnalysis = Array.isArray(advisoryResult.risk_analysis) ? advisoryResult.risk_analysis.slice(0, 15) : [];
-        const architectureDiagram = typeof advisoryResult.architecture_diagram === 'string'
-          ? sanitizeMermaid(advisoryResult.architecture_diagram)
+        const improvements = Array.isArray(advisoryResult.IMPROVEMENTS) ? advisoryResult.IMPROVEMENTS.slice(0, 15) : [];
+        const questions = Array.isArray(advisoryResult.QUESTIONS) ? advisoryResult.QUESTIONS.slice(0, 15) : [];
+        const riskAnalysis = Array.isArray(advisoryResult.RISK_ANALYSIS) ? advisoryResult.RISK_ANALYSIS.slice(0, 15) : [];
+        const contextDiagram = typeof advisoryResult.CONTEXT_DIAGRAM === 'string'
+          ? sanitizeMermaid(advisoryResult.CONTEXT_DIAGRAM)
           : '';
-        const impactedSystems = Array.isArray(advisoryResult.impacted_systems) ? advisoryResult.impacted_systems.slice(0, 20) : [];
-        const fsdDesign = Array.isArray(advisoryResult.fsd_design) ? advisoryResult.fsd_design.slice(0, 20) : [];
+        const impactedComponents = Array.isArray(advisoryResult.IMPACTED_COMPONENTS) ? advisoryResult.IMPACTED_COMPONENTS.slice(0, 20) : [];
+        const useCaseScenarios = Array.isArray(advisoryResult.USE_CASE_SCENARIOS) ? advisoryResult.USE_CASE_SCENARIOS.slice(0, 20) : [];
 
         // Save advisory to DB
         await supabase.from('brd_documents').update({
           improvements,
           questions,
           risk_analysis: riskAnalysis,
-          architecture_diagram: architectureDiagram,
-          impacted_systems: impactedSystems,
-          fsd_design: fsdDesign,
+          context_diagram: contextDiagram,
+          impacted_components: impactedComponents,
+          use_case_scenarios: useCaseScenarios,
           analysis_status: 'completed',
         }).eq('id', documentId);
 
@@ -292,11 +345,57 @@ export async function POST(request: NextRequest) {
           improvements,
           questions,
           risk_analysis: riskAnalysis,
-          architecture_diagram: architectureDiagram,
-          impacted_systems: impactedSystems,
-          fsd_design: fsdDesign,
+          context_diagram: contextDiagram,
+          impacted_components: impactedComponents,
+          use_case_scenarios: useCaseScenarios,
           reasoning: coreReasoning,
         }));
+
+        // Run discovery, optimization, and solutions prompts in parallel
+        // Results will be stored in the next iteration
+        try {
+          const featuresJson = JSON.stringify(features.map((f: any) => ({
+            id: f.feature_id,
+            name: f.name,
+            description: f.description,
+          })));
+
+          await Promise.all([
+            streamGuardedCompletion(
+              openai,
+              selectedModel,
+              [
+                { role: 'system', content: 'You are an expert business analyst. Generate discovery questions to gather missing requirements.' },
+                { role: 'user', content: buildDiscoveryPrompt(finalAnalysisText, featuresJson) },
+              ],
+              () => {},
+              () => {},
+            ),
+            streamGuardedCompletion(
+              openai,
+              selectedModel,
+              [
+                { role: 'system', content: 'You are an expert business analyst. Generate optimization suggestions.' },
+                { role: 'user', content: buildOptimizationPrompt(finalAnalysisText, featuresJson) },
+              ],
+              () => {},
+              () => {},
+            ),
+            streamGuardedCompletion(
+              openai,
+              selectedModel,
+              [
+                { role: 'system', content: 'You are a solution architect. Map technical solutions to requirements.' },
+                { role: 'user', content: buildSolutionsPrompt(finalAnalysisText, featuresJson) },
+              ],
+              () => {},
+              () => {},
+            ),
+          ]);
+        } catch (err) {
+          // Non-critical, mock data will be used in frontend
+          console.error('Additional prompts failed:', err);
+        }
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';

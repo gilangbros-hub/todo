@@ -81,6 +81,34 @@ const nextConfig = {
       },
     ];
   },
+
+  async redirects() {
+    return [
+      { source: '/renata/workspace', destination: '/renata/mission-control', permanent: true },
+      { source: '/renata/gatehouse', destination: '/renata/mission-control', permanent: true },
+      { source: '/renata/reveal/:featureId', destination: '/renata/insights/:featureId', permanent: true },
+      { source: '/renata/scroll', destination: '/renata/results', permanent: true },
+      { source: '/renata/silent-laws', destination: '/renata/results', permanent: true },
+      { source: '/renata/flow', destination: '/renata/results', permanent: true },
+      { source: '/renata/tome', destination: '/renata/results', permanent: true },
+      { source: '/renata/realms', destination: '/renata/results', permanent: true },
+      { source: '/renata/trials', destination: '/renata/results', permanent: true },
+      { source: '/renata/grand-map', destination: '/renata/results', permanent: true },
+      { source: '/renata/counsel', destination: '/renata/results', permanent: true },
+      { source: '/renata/codex', destination: '/renata/results', permanent: true },
+      { source: '/renata/catalog', destination: '/renata/results', permanent: true },
+      { source: '/renata/requirements', destination: '/renata/results', permanent: true },
+      { source: '/renata/non-functional', destination: '/renata/results', permanent: true },
+      { source: '/renata/process', destination: '/renata/results', permanent: true },
+      { source: '/renata/features', destination: '/renata/results', permanent: true },
+      { source: '/renata/systems', destination: '/renata/results', permanent: true },
+      { source: '/renata/risks', destination: '/renata/results', permanent: true },
+      { source: '/renata/architecture', destination: '/renata/results', permanent: true },
+      { source: '/renata/advisory', destination: '/renata/results', permanent: true },
+      { source: '/oracle', destination: '/renata/mission-control', permanent: true },
+      { source: '/oracle/:path*', destination: '/renata/mission-control', permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

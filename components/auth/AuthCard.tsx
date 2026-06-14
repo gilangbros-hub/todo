@@ -7,14 +7,14 @@ interface AuthCardProps {
 export default function AuthCard({ children }: AuthCardProps) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-[480px] bg-rpg-card border-pixel border-rpg-border rounded-pixel p-8">
+      <div className="w-full max-w-[480px] bg-sys-surface border border-sys-border rounded-xl p-8">
         <div className="flex justify-center mb-6">
           <Image
             src="/logo.png"
-            alt="Quest Board Logo"
+            alt="Renata Logo"
             width={80}
             height={80}
-            className="pixel-art"
+            className="rounded-lg"
             priority
           />
         </div>

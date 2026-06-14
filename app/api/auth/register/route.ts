@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Initialize Player_Stats for the new user
+  // User registered successfully
   if (data.user) {
     await supabase.from('player_stats').insert({
       user_id: data.user.id,

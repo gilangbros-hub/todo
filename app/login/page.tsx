@@ -55,8 +55,6 @@ function LoginForm() {
       }
 
       router.push("/");
-      // Set flag for loading screen on dashboard
-      sessionStorage.setItem('show_loading_screen', '1');
     } catch {
       setServerError("Connection failed. Please check your network and try again.");
     } finally {
@@ -67,8 +65,8 @@ function LoginForm() {
   return (
     <AuthCard>
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-        <h1 className="font-pixel text-xl text-center text-white [text-shadow:2px_2px_0px_#000]">
-          Enter the Realm
+        <h1 className="font-outfit text-2xl text-center text-sys-text font-semibold">
+          Sign In
         </h1>
 
         <AuthError message={serverError} />
@@ -80,7 +78,7 @@ function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={errors.email}
-          placeholder="hero@realm.com"
+          placeholder="email@example.com"
           autoComplete="email"
         />
 
@@ -96,16 +94,16 @@ function LoginForm() {
         />
 
         <AuthButton type="submit" loading={loading} disabled={loading}>
-          Enter
+          Sign In
         </AuthButton>
 
-        <p className="text-center font-retro text-lg text-gray-400">
-          New hero?{" "}
+        <p className="text-center font-geist text-sm text-sys-muted">
+          No account?{" "}
           <Link
             href="/register"
-            className="text-rpg-legendary hover:underline"
+            className="text-sys-primary hover:underline font-medium"
           >
-            Create Your Hero
+            Create Account
           </Link>
         </p>
       </form>

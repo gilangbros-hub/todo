@@ -22,12 +22,12 @@ export default function AuthButton({
   const isDisabled = disabled || loading;
 
   const baseStyles =
-    "w-full px-6 py-3 font-retro text-lg border-pixel rounded-pixel transition-all duration-100 ease-in-out cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed";
+    "w-full px-6 py-3 font-geist text-base rounded-xl transition-all duration-100 ease-in-out cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed";
 
   const variantStyles =
     variant === "primary"
-      ? "bg-rpg-legendary text-[#0d0d1a] border-[#b8941f] hover:shadow-[0_0_12px_rgba(240,192,64,0.6)]"
-      : "bg-[#3a1a1a] text-red-400 border-red-900 hover:shadow-[0_0_12px_rgba(239,68,68,0.4)] hover:bg-[#4a1f1f]";
+      ? "bg-sys-primary text-white hover:bg-sys-primary/90 shadow-sm"
+      : "bg-sys-error/10 text-sys-error border border-sys-error/30 hover:bg-sys-error/20";
 
   const disabledHoverOverride = isDisabled ? "hover:shadow-none" : "";
 

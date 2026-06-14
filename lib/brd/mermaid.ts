@@ -1,5 +1,5 @@
 /**
- * BRD Oracle — Mermaid diagram sanitizer.
+ * BRD Analysis — Mermaid diagram sanitizer.
  *
  * LLM-generated Mermaid is frequently broken beyond simple regex fixes:
  * - `ARH(ARH - User)"])` — mismatched delimiters with garbage suffixes

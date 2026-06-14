@@ -1,5 +1,5 @@
 /**
- * BRD Oracle — Token quality / repetition-loop guard for streaming LLM output.
+ * BRD Analysis — Token quality / repetition-loop guard for streaming LLM output.
  *
  * LLMs (especially reasoning models) sometimes fall into degenerate loops where
  * they emit the same token or short phrase over and over — e.g.

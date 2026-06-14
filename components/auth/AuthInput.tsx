@@ -22,7 +22,7 @@ export default function AuthInput({
     <div className="flex flex-col gap-1">
       <label
         htmlFor={name}
-        className="font-retro text-lg text-white"
+        className="font-geist text-sm font-medium text-sys-text"
       >
         {label}
       </label>
@@ -30,8 +30,8 @@ export default function AuthInput({
         id={name}
         name={name}
         type={type}
-        className={`w-full bg-[#1a1a2e] border-[4px] border-[#2a2a4a] rounded-[2px] px-3 py-2 font-retro text-xl text-white placeholder-gray-500 outline-none focus:border-rpg-legendary transition-colors ${
-          error ? "border-red-500" : ""
+        className={`w-full bg-sys-bg border border-sys-border rounded-lg px-3 py-2 font-geist text-base text-sys-text placeholder-sys-faint outline-none focus:border-sys-primary focus:ring-1 focus:ring-sys-primary transition-colors ${
+          error ? "border-sys-error" : ""
         } ${className}`}
         aria-invalid={error ? "true" : undefined}
         aria-describedby={error ? `${name}-error` : undefined}
@@ -40,7 +40,7 @@ export default function AuthInput({
       {error && (
         <p
           id={`${name}-error`}
-          className="font-retro text-base text-red-400 mt-1"
+          className="font-geist text-sm text-sys-error mt-1"
           role="alert"
         >
           {error}

@@ -34,6 +34,10 @@ yarn-error.log*
 next-env.d.ts
 node_modules
 
+# Prevent build artifact leakage at root
+/layout*.css
+/*.html
+
 # AI tool config directories
 .agent/
 .claude/

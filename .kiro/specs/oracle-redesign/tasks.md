@@ -220,3 +220,23 @@ This plan implements the Oracle Redesign as a multi-chapter Next.js App Router s
 - The existing BRD data layer (`lib/services/brd.ts`) and API routes are reused without modification
 - All new components go under `components/oracle/` to isolate from existing RPG components
 - All new pages go under `app/oracle/` using Next.js App Router conventions
+
+## Task Dependency Graph
+
+```json
+{
+  "waves": [
+    { "id": 0, "tasks": ["1.1", "1.2", "1.3", "1.4"] },
+    { "id": 1, "tasks": ["1.5", "2.1", "2.2"] },
+    { "id": 2, "tasks": ["2.3", "2.4", "2.5"] },
+    { "id": 3, "tasks": ["2.6", "4.1"] },
+    { "id": 4, "tasks": ["4.2", "4.3", "5.1"] },
+    { "id": 5, "tasks": ["4.4", "5.2", "6.1", "7.1", "8.1"] },
+    { "id": 6, "tasks": ["8.2", "9.1", "11.1", "12.1", "13.1", "14.1"] },
+    { "id": 7, "tasks": ["9.2", "15.1"] },
+    { "id": 8, "tasks": ["15.2"] },
+    { "id": 9, "tasks": ["15.3", "17.1", "17.2", "17.3", "17.4"] },
+    { "id": 10, "tasks": ["17.5", "18.1", "18.2", "18.3"] }
+  ]
+}
+```

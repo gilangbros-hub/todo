@@ -7,10 +7,10 @@ export default function AuthError({ message }: AuthErrorProps) {
 
   return (
     <div
-      className="border-4 border-[#ef4444] rounded-[2px] bg-[rgba(239,68,68,0.1)] shadow-overdue p-3"
+      className="border border-sys-error/30 rounded-lg bg-sys-error/10 p-3"
       role="alert"
     >
-      <p className="font-retro text-lg text-[#ef4444]">{message}</p>
+      <p className="font-geist text-sm text-sys-error">{message}</p>
     </div>
   );
 }

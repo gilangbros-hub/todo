@@ -27,8 +27,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Sanitize extracted text: strip control characters, PDF artifacts, and image references
+    let cleanText = pdfData.text
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // control chars except \t\n\r
+      .replace(/\r\n/g, '\n') // normalize line endings
+      .replace(/\r/g, '\n')
+      .replace(/<<\/[A-Za-z]+\s*\/[A-Za-z]+\s*\d+\s*\d+\s*R>>/g, '') // PDF object refs
+      .replace(/\/Im\d+\s+Do/gi, '') // PDF inline image references
+      .replace(/\/Im\d+/gi, '') // PDF image object names
+      .replace(/\/[A-Za-z]+\s+\d+\s+\d+\s+R/gi, '') // PDF reference patterns
+      .replace(/(\S+\/)?image\s*\d*\.(png|jpg|jpeg|gif|bmp|svg|tiff|webp)/gi, '[image]') // any image filename
+      .replace(/\[image:\s*\S+\.(png|jpg|jpeg|gif)\]/gi, '[image]') // [image: file.png] patterns
+      .replace(/[^\S\n]+/g, ' ') // collapse multiple spaces (preserve newlines)
+      .replace(/\n{3,}/g, '\n\n') // collapse multiple blank lines
+      .trim();
+
+    if (cleanText.length < 10) {
+      return NextResponse.json(
+        { error: 'No readable text could be extracted from this PDF. The file may be scanned/image-based.' },
+        { status: 422 }
+      );
+    }
+
     return NextResponse.json({
-      text: pdfData.text,
+      text: cleanText,
       pages: pdfData.numpages,
       fileName,
     });
