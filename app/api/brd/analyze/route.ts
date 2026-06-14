@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
-import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
-import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
-import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 import { sanitizeBrdText, validateBrdInput, validateTextLength, stripMarkdownFences } from '@/lib/brd/text';
 import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
 import { mapFeatureRows } from '@/lib/brd/features';
 import { runChunkExtraction } from '@/lib/brd/pipeline';
 
-// Allow up to 5 minutes for the analysis (Vercel Pro/Enterprise).
-// On Hobby tier the hard limit is lower; the frontend's 3-min abort still protects us.
-export const maxDuration = 300;
+// Vercel Hobby tier caps at 60 s. The non-streaming route is more
+// constrained than the SSE streaming route — prefer /api/brd/stream.
+export const maxDuration = 60;
 export const runtime = 'nodejs';
+
+/** Max content tokens per LLM call. */
+const MAX_TOKENS = 16_384;
+/** Abort a single LLM call after this many ms. */
+const CALL_TIMEOUT_MS = 55_000;
 
 /**
  * BRD Analysis — 2 parallel LLM calls, each saved to the DB independently
@@ -75,18 +77,28 @@ export async function POST(request: NextRequest) {
     // --- Map-Reduce Chunking Phase ---
     const finalAnalysisText = await runChunkExtraction(openai, trimmedText);
 
-    // Helper: call DeepSeek and parse JSON
+    // Helper: call DeepSeek and parse JSON, with a hard timeout.
     const callLLM = async (prompt: string): Promise<unknown> => {
-      const completion = await openai.chat.completions.create({
-        model: selectedModel,
-        messages: [
-          { role: 'system', content: BA_SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-      });
-      const responseText = completion.choices[0]?.message?.content || '';
-      return JSON.parse(stripMarkdownFences(responseText));
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), CALL_TIMEOUT_MS);
+      try {
+        const completion = await openai.chat.completions.create(
+          {
+            model: selectedModel,
+            messages: [
+              { role: 'system', content: BA_SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.3,
+            max_tokens: MAX_TOKENS,
+          },
+          { signal: abort.signal },
+        );
+        const responseText = completion.choices[0]?.message?.content || '';
+        return JSON.parse(stripMarkdownFences(responseText));
+      } finally {
+        clearTimeout(timer);
+      }
     };
 
     // --- Core section: features + flow process ---
@@ -167,26 +179,12 @@ export async function POST(request: NextRequest) {
         return { improvements: [], questions: [], riskAnalysis: [], contextDiagram: '', impactedComponents: [], useCaseScenarios: [] };
       });
 
-    // Wait for both, then run additional prompts
+    // Wait for both sections
     const [coreRes, advisoryRes] = await Promise.all([corePromise, advisoryPromise]);
 
-    // Run discovery, optimization, and solutions prompts in parallel
-    try {
-      const featuresJson = JSON.stringify(coreRes.features.map((f: any) => ({
-        id: f.feature_id,
-        name: f.name,
-        description: f.description,
-      })));
-
-      await Promise.all([
-        callLLM(buildDiscoveryPrompt(finalAnalysisText, featuresJson)),
-        callLLM(buildOptimizationPrompt(finalAnalysisText, featuresJson)),
-        callLLM(buildSolutionsPrompt(finalAnalysisText, featuresJson)),
-      ]);
-    } catch (err) {
-      // Non-critical, mock data will be used in frontend
-      console.error('Additional prompts failed:', err);
-    }
+    // NOTE: Discovery / optimization / solutions prompts were previously
+    // fired here but their results were never persisted — they only burned
+    // API credits and extended the function lifetime.  Removed intentionally.
 
     const { error: statusErr } = await supabase
       .from('brd_documents')

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Brain, Upload, Play, CloudUpload, AlertCircle, FileText,
   Bell, Settings, ArrowRight, Loader, ExternalLink, Trash2,
+  Square,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { parsePdfWithSplit } from '@/lib/client/pdf';
@@ -37,6 +38,16 @@ export default function MissionControlPage() {
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const reasoningEndRef = useRef<HTMLDivElement>(null);
+
+  // Stream lifecycle refs — abort controller, idle detection
+  const abortRef = useRef<AbortController | null>(null);
+  const lastDataRef = useRef<number>(Date.now());
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  /** Total analysis hard-cap (5 min). */
+  const TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
+  /** If no SSE data arrives for this long, assume the connection died. */
+  const IDLE_TIMEOUT_MS = 25_000;
 
   // Document history
   const { documents, isLoading: isLoadingDocs, error: historyError, handleDelete: handleDeleteDocument, handleView: handleViewDocument } = useBrdDocuments({ limit: 5 });
@@ -171,15 +182,42 @@ export default function MissionControlPage() {
     return parsePdfWithSplit(selectedFile, (msg) => setStatusText(msg));
   };
 
+  // Stop a running analysis (called by the Stop button or timeouts).
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  // Clean up stream resources on unmount.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    };
+  }, []);
+
   // Submit analysis
   const handleSubmit = async () => {
     if (!hasInput || isAnalyzing) return;
+
+    const abort = new AbortController();
+    abortRef.current = abort;
+    lastDataRef.current = Date.now();
 
     setIsAnalyzing(true);
     setPhase('parsing');
     setStatusText('Reading document...');
     setReasoning('');
     setError(null);
+
+    // Hard timeout for the entire analysis.
+    const totalTimer = setTimeout(() => abort.abort(), TOTAL_TIMEOUT_MS);
+
+    // Idle detection — if no bytes arrive for IDLE_TIMEOUT_MS, abort.
+    idleTimerRef.current = setInterval(() => {
+      if (Date.now() - lastDataRef.current > IDLE_TIMEOUT_MS) {
+        abort.abort();
+      }
+    }, 5_000);
 
     try {
       const { text, fileName } = await getDocumentText();
@@ -199,6 +237,7 @@ export default function MissionControlPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, title, fileName, model }),
+        signal: abort.signal,
       });
 
       if (response.status === 413) {
@@ -219,6 +258,9 @@ export default function MissionControlPage() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // Any bytes from the server reset the idle clock.
+        lastDataRef.current = Date.now();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -248,10 +290,22 @@ export default function MissionControlPage() {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error occurred';
-      setError(msg);
+      // Abort errors are expected when the user clicks Stop or a timeout fires.
+      if (abort.signal.aborted) {
+        setError('Analysis was stopped. Any saved progress is available in your history.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Unknown error occurred';
+        setError(msg);
+      }
       setPhase('error');
       setIsAnalyzing(false);
+    } finally {
+      clearTimeout(totalTimer);
+      if (idleTimerRef.current) {
+        clearInterval(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      abortRef.current = null;
     }
   };
 
@@ -329,6 +383,18 @@ export default function MissionControlPage() {
                 {reasoning}
               </p>
               <div ref={reasoningEndRef} />
+            </div>
+          )}
+
+          {isAnalyzing && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handleStop}
+                className="px-5 py-2 bg-sys-error/10 border border-sys-error/30 text-sys-error rounded-xl font-geist text-sm font-medium hover:bg-sys-error/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Square size={14} />
+                Stop Analysis
+              </button>
             </div>
           )}
         </div>
