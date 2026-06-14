@@ -7,3 +7,4 @@ export { ScoreOrb } from './ScoreOrb';
 export { RiskCard } from './RiskCard';
 export { ExpandableCard } from './ExpandableCard';
 export { SectionHeader } from './SectionHeader';
+export { StatusBadge } from './StatusBadge';

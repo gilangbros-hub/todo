@@ -7,9 +7,9 @@ import {
   Bell, Settings, ArrowRight, Loader, ExternalLink, Trash2,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
-import { getBrdDocuments, deleteBrdDocument } from '@/lib/services/brd';
 import { parsePdfWithSplit } from '@/lib/client/pdf';
-import { BrdDocument } from '@/lib/types';
+import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
+import { StatusBadge } from '@/components/renata/StatusBadge';
 
 const MODELS = [
   { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: 'Comprehensive BRD analysis with gap identification, risk assessment, and enterprise-standard requirement extraction.' },
@@ -19,7 +19,7 @@ type AnalysisPhase = 'idle' | 'parsing' | 'core' | 'advisory' | 'complete' | 'er
 
 export default function MissionControlPage() {
   const router = useRouter();
-  const { refreshData, setActiveDocument } = useRenata();
+  const { refreshData } = useRenata();
 
   // Input state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -38,44 +38,10 @@ export default function MissionControlPage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const reasoningEndRef = useRef<HTMLDivElement>(null);
 
-  // Document history state
-  const [documents, setDocuments] = useState<BrdDocument[]>([]);
-  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
+  // Document history
+  const { documents, isLoading: isLoadingDocs, handleDelete: handleDeleteDocument, handleView: handleViewDocument } = useBrdDocuments({ limit: 5 });
 
   const hasInput = selectedFile !== null || pasteText.trim().length > 0;
-
-  // Fetch document history on mount
-  const fetchDocuments = useCallback(async () => {
-    try {
-      setIsLoadingDocs(true);
-      const docs = await getBrdDocuments();
-      setDocuments(docs.slice(0, 5));
-    } catch (err) {
-      console.error('Failed to fetch documents:', err);
-    } finally {
-      setIsLoadingDocs(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDocuments();
-  }, [fetchDocuments]);
-
-  // Handle document deletion
-  const handleDeleteDocument = async (id: string) => {
-    try {
-      await deleteBrdDocument(id);
-      await fetchDocuments();
-    } catch (err) {
-      console.error('Failed to delete document:', err);
-    }
-  };
-
-  // Handle view document
-  const handleViewDocument = (doc: BrdDocument) => {
-    setActiveDocument(doc);
-    router.push('/renata/results');
-  };
 
   // Elapsed time counter
   useEffect(() => {
@@ -516,18 +482,7 @@ export default function MissionControlPage() {
                         </div>
                       </td>
                       <td className="py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide border ${
-                          doc.analysis_status === 'completed'
-                            ? 'bg-sys-success/10 text-sys-success border-sys-success/20'
-                            : doc.analysis_status === 'analyzing'
-                            ? 'bg-sys-primary-container/10 text-sys-primary border-sys-primary-container/20'
-                            : 'bg-sys-error/10 text-sys-error border-sys-error/20'
-                        }`}>
-                          {doc.analysis_status === 'analyzing' && <Loader size={12} className="animate-spin" />}
-                          {doc.analysis_status === 'completed' && <span className="w-1.5 h-1.5 rounded-full bg-sys-success"></span>}
-                          {doc.analysis_status === 'failed' && <span className="w-1.5 h-1.5 rounded-full bg-sys-error"></span>}
-                          {doc.analysis_status === 'completed' ? 'Completed' : doc.analysis_status === 'analyzing' ? 'Processing' : 'Failed'}
-                        </span>
+                        <StatusBadge status={doc.analysis_status} />
                       </td>
                       <td className="py-4 text-sys-muted">
                         {new Date(doc.created_at).toLocaleDateString('en-US', {

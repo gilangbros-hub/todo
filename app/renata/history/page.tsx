@@ -1,47 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { History, Loader, ExternalLink, Trash2 } from 'lucide-react';
-import { useRenata } from '@/lib/renata/context';
-import { getBrdDocuments, deleteBrdDocument } from '@/lib/services/brd';
-import { BrdDocument } from '@/lib/types';
+import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
+import { StatusBadge } from '@/components/renata/StatusBadge';
 
 export default function HistoryPage() {
   const router = useRouter();
-  const { setActiveDocument } = useRenata();
-  const [documents, setDocuments] = useState<BrdDocument[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const fetchDocuments = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const docs = await getBrdDocuments();
-      setDocuments(docs);
-    } catch (err) {
-      console.error('Failed to fetch documents:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDocuments();
-  }, [fetchDocuments]);
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteBrdDocument(id);
-      await fetchDocuments();
-    } catch (err) {
-      console.error('Failed to delete document:', err);
-    }
-  };
-
-  const handleView = (doc: BrdDocument) => {
-    setActiveDocument(doc);
-    router.push('/renata/results');
-  };
+  const { documents, isLoading, handleDelete, handleView } = useBrdDocuments();
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -86,14 +52,7 @@ export default function HistoryPage() {
                     </span>
                   </td>
                   <td className="py-3 px-4 hidden sm:table-cell">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                      doc.analysis_status === 'completed' ? 'bg-sys-success/10 text-sys-success border-sys-success/20' :
-                      doc.analysis_status === 'analyzing' ? 'bg-sys-primary-container/10 text-sys-primary border-sys-primary-container/20' :
-                      'bg-sys-error/10 text-sys-error border-sys-error/20'
-                    }`}>
-                      {doc.analysis_status === 'analyzing' && <Loader size={12} className="animate-spin" />}
-                      {doc.analysis_status === 'completed' ? 'Completed' : doc.analysis_status === 'analyzing' ? 'Processing' : 'Failed'}
-                    </span>
+                    <StatusBadge status={doc.analysis_status} />
                   </td>
                   <td className="py-3 px-4 text-sys-muted text-xs hidden md:table-cell">
                     {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

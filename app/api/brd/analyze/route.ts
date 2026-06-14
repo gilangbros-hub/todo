@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
 import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
 import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
 import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
-import { sanitizeImageReferences } from '@/lib/brd/sanitize';
-import { chunkText } from '@/lib/brd/chunking';
-import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
-
-// Vercel Hobby enforces a 4.5 MB function payload limit.
-// JSON-encoding 300 K chars costs ~600 KB, leaving plenty of headroom.
-// The map-reduce chunking pipeline handles large docs server-side anyway.
-const MAX_INPUT_CHARS = 300_000;
+import { sanitizeBrdText, validateBrdInput, validateTextLength, stripMarkdownFences } from '@/lib/brd/text';
+import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
+import { mapFeatureRows } from '@/lib/brd/features';
+import { runChunkExtraction } from '@/lib/brd/pipeline';
 
 // Allow up to 5 minutes for the analysis (Vercel Pro/Enterprise).
 // On Hobby tier the hard limit is lower; the frontend's 3-min abort still protects us.
@@ -35,42 +30,28 @@ export async function POST(request: NextRequest) {
       model?: string;
     };
 
-    const ALLOWED_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
-    const selectedModel = model && ALLOWED_MODELS.includes(model) ? model : 'deepseek-v4-pro';
+    const selectedModel = selectModel(model);
 
     // Validate and sanitize input
-    if (!text || typeof text !== 'string') {
-      return NextResponse.json({ error: 'No document text provided' }, { status: 400 });
-    }
-    if (!title || typeof title !== 'string') {
-      return NextResponse.json({ error: 'No document title provided' }, { status: 400 });
+    const inputErr = validateBrdInput(text, title);
+    if (inputErr) {
+      return NextResponse.json({ error: inputErr.error }, { status: inputErr.status });
     }
 
-    let trimmedText = text
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .trim();
+    const trimmedText = sanitizeBrdText(text);
 
-    trimmedText = sanitizeImageReferences(trimmedText);
-
-    if (trimmedText.length < 50) {
-      return NextResponse.json({ error: 'Document text is too short (minimum 50 characters)' }, { status: 400 });
-    }
-    if (trimmedText.length > MAX_INPUT_CHARS) {
-      return NextResponse.json({ error: `Document text exceeds maximum length (${MAX_INPUT_CHARS} characters)` }, { status: 400 });
+    const lengthErr = validateTextLength(trimmedText);
+    if (lengthErr) {
+      return NextResponse.json({ error: lengthErr.error }, { status: lengthErr.status });
     }
 
-    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const apiKey = getDeepSeekApiKey();
     if (!apiKey) {
       return NextResponse.json({ error: 'Renata is not configured. Missing DeepSeek API key.' }, { status: 500 });
     }
 
     const supabase = await createClient();
-    const openai = new OpenAI({
-      baseURL: 'https://api.deepseek.com',
-      apiKey,
-    });
+    const openai = createDeepSeekClient(apiKey);
 
     // Create document record with status 'analyzing'
     const { data: doc, error: docError } = await supabase
@@ -92,45 +73,20 @@ export async function POST(request: NextRequest) {
     const documentId = doc.id;
 
     // --- Map-Reduce Chunking Phase ---
-    let finalAnalysisText = trimmedText;
-
-    if (trimmedText.length > 25000) {
-      const chunks = chunkText(trimmedText, 25000, 1000);
-      const extractionPromises = chunks.map(async (chunk) => {
-        try {
-          const res = await openai.chat.completions.create({
-            model: 'deepseek-chat', // Fast model for extraction
-            messages: [{ role: 'user', content: buildExtractionPrompt(chunk.content, chunk.index, chunks.length) }],
-            temperature: 0.1,
-          });
-          return res.choices[0]?.message?.content || '';
-        } catch (err) {
-          console.error(`Chunk ${chunk.index} failed:`, err);
-          return '';
-        }
-      });
-      const extractedContents = await Promise.all(extractionPromises);
-      finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
-      finalAnalysisText = sanitizeImageReferences(finalAnalysisText);
-    }
+    const finalAnalysisText = await runChunkExtraction(openai, trimmedText);
 
     // Helper: call DeepSeek and parse JSON
     const callLLM = async (prompt: string): Promise<unknown> => {
       const completion = await openai.chat.completions.create({
         model: selectedModel,
         messages: [
-          { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
+          { role: 'system', content: BA_SYSTEM_PROMPT },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
       });
       const responseText = completion.choices[0]?.message?.content || '';
-      const cleaned = responseText
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(stripMarkdownFences(responseText));
     };
 
     // --- Core section: features + flow process ---
@@ -151,29 +107,7 @@ export async function POST(request: NextRequest) {
 
         // Save features to brd_features
         if (features.length > 0) {
-          const featureRows = (features as Record<string, unknown>[]).map((f) => ({
-            document_id: documentId,
-            feature_id: typeof f.feature_id === 'string' ? f.feature_id.slice(0, 50) : 'F-UNKNOWN',
-            name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
-            description: typeof f.description === 'string' ? f.description.slice(0, 800) : '',
-            requirement_classification: (() => {
-              const raw = String(f.requirement_classification || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
-              const valid = ['business_requirement', 'stakeholder_requirement', 'functional_requirement', 'non_functional_requirement', 'transition_requirement'];
-              if (valid.includes(raw)) return raw;
-              return 'functional_requirement';
-            })(),
-            priority_moscow: ['must_have', 'should_have', 'could_have', 'wont_have'].includes(String(f.priority_moscow))
-              ? f.priority_moscow : 'should_have',
-            business_value: typeof f.business_value === 'string' ? f.business_value : '',
-            capability_gap: typeof f.capability_gap === 'string' ? f.capability_gap : '',
-            business_rules: Array.isArray(f.business_rules) ? f.business_rules.filter((r: unknown) => typeof r === 'string') : [],
-            stakeholders: Array.isArray(f.stakeholders) ? f.stakeholders.filter((r: unknown) => typeof r === 'string') : [],
-            preconditions: typeof f.preconditions === 'string' ? f.preconditions : '',
-            postconditions: typeof f.postconditions === 'string' ? f.postconditions : '',
-            acceptance_criteria: Array.isArray(f.acceptance_criteria) ? f.acceptance_criteria.filter((r: unknown) => typeof r === 'string') : [],
-            dependencies_and_risks: typeof f.dependencies_and_risks === 'string' ? f.dependencies_and_risks : '',
-            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
-          }));
+          const featureRows = mapFeatureRows(features, documentId);
           const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
           if (featErr) console.error('Feature insert failed:', featErr);
         }
