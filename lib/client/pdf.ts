@@ -39,7 +39,7 @@ export async function splitPdf(
     const chunkBytes = await chunkDoc.save();
     const partNum = chunkIdx + 1;
     const chunkFile = new File(
-      [chunkBytes],
+      [new Uint8Array(chunkBytes)],
       file.name.replace(/\.pdf$/i, `_part${partNum}.pdf`),
       { type: 'application/pdf' },
     );
