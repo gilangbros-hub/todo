@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { getBrdDocuments, deleteBrdDocument } from '@/lib/services/brd';
+import { parsePdfWithSplit } from '@/lib/client/pdf';
 import { BrdDocument } from '@/lib/types';
 
 const MODELS = [
@@ -120,14 +121,14 @@ export default function MissionControlPage() {
 
   // File validation
   const validateFile = (file: File): string | null => {
-    // Vercel Hobby enforces a 4.5 MB function payload limit.
-    // Leave 0.5 MB headroom for FormData multipart encoding overhead.
-    const maxSize = 4 * 1024 * 1024; // 4 MB
+    // PDFs are automatically split into Vercel-safe chunks client-side.
+    // Allow up to 25 MB — larger files may cause browser memory issues.
+    const maxSize = 25 * 1024 * 1024; // 25 MB
     const allowedTypes = ['application/pdf', 'text/plain'];
     const allowedExtensions = ['.pdf', '.txt'];
 
     if (file.size > maxSize) {
-      return `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — exceeds the 4 MB limit (Vercel serverless payload cap). Please reduce the file size.`;
+      return `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — exceeds the 25 MB limit. Please reduce the file size.`;
     }
 
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
@@ -199,33 +200,8 @@ export default function MissionControlPage() {
       return { text: raw.slice(0, MAX_TEXT_CHARS), fileName: selectedFile.name };
     }
 
-    const form = new FormData();
-    form.append('file', selectedFile);
-    form.append('fileName', selectedFile.name);
-
-    const res = await fetch('/api/brd/parse-pdf', {
-      method: 'POST',
-      body: form,
-    });
-
-    if (res.status === 413) {
-      throw new Error('File is too large for Vercel\'s serverless function limit (4.5 MB). Please reduce the file size below 4 MB and try again.');
-    }
-
-    if (!res.ok) {
-      let message = 'Failed to parse PDF';
-      try {
-        const err = await res.json();
-        message = err.error || message;
-      } catch {
-        // Response body is not JSON (e.g. Vercel error page)
-      }
-      throw new Error(message);
-    }
-
-    const data = await res.json();
-    // Truncate extracted text to stay under Vercel's payload limit
-    return { text: (data.text as string).slice(0, MAX_TEXT_CHARS), fileName: selectedFile.name };
+    // PDF: transparently split into Vercel-safe chunks if needed
+    return parsePdfWithSplit(selectedFile, (msg) => setStatusText(msg));
   };
 
   // Submit analysis
