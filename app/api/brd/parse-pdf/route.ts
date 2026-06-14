@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeControlChars } from '@/lib/brd/text';
 import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 
 // Use formData upload instead of base64 JSON to stay under
@@ -35,10 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Sanitize extracted text: strip control characters, PDF artifacts, and image references
-    let cleanText = pdfData.text
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // control chars except \t\n\r
-      .replace(/\r\n/g, '\n') // normalize line endings
-      .replace(/\r/g, '\n')
+    let cleanText = sanitizeControlChars(pdfData.text)
       .replace(/<<\/[A-Za-z]+\s*\/[A-Za-z]+\s*\d+\s*\d+\s*R>>/g, '') // PDF object refs
       .replace(/\/[A-Za-z]+\s+\d+\s+\d+\s+R/gi, '') // PDF reference patterns
       .replace(/[^\S\n]+/g, ' ') // collapse multiple spaces (preserve newlines)
