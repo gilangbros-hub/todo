@@ -15,11 +15,15 @@ export function useBrdRealtime(documentId: string | null) {
   const fetchDocument = useCallback(async () => {
     if (!documentId) return;
     const supabase = createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('brd_documents')
       .select('*')
       .eq('id', documentId)
       .single();
+    if (error) {
+      console.error('Failed to fetch BRD document for realtime:', error.message);
+      return;
+    }
     if (data) {
       setDocument(data as BrdDocument);
       setSectionsReady(data.sections_completed || []);

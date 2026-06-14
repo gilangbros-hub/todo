@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { History, Loader, ExternalLink, Trash2 } from 'lucide-react';
+import { History, Loader, ExternalLink, Trash2, AlertCircle } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { getBrdDocuments, deleteBrdDocument } from '@/lib/services/brd';
 import { BrdDocument } from '@/lib/types';
@@ -12,14 +12,18 @@ export default function HistoryPage() {
   const { setActiveDocument } = useRenata();
   const [documents, setDocuments] = useState<BrdDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     try {
       setIsLoading(true);
+      setFetchError(null);
       const docs = await getBrdDocuments();
       setDocuments(docs);
     } catch (err) {
-      console.error('Failed to fetch documents:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to load analysis history';
+      setFetchError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -31,10 +35,12 @@ export default function HistoryPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      setDeleteError(null);
       await deleteBrdDocument(id);
       await fetchDocuments();
     } catch (err) {
-      console.error('Failed to delete document:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to delete document';
+      setDeleteError(msg);
     }
   };
 
@@ -49,6 +55,13 @@ export default function HistoryPage() {
         <h2 className="font-outfit text-2xl font-bold text-sys-text">Analysis History</h2>
         <p className="font-geist text-sm text-sys-muted mt-1">All uploaded BRD documents and their analysis results.</p>
       </div>
+
+      {(fetchError || deleteError) && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-sys-error/10 border border-sys-error/20 rounded-xl text-sys-error text-sm font-geist">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          <span>{fetchError || deleteError}</span>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-12">

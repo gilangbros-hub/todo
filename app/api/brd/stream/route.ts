@@ -112,7 +112,13 @@ async function streamGuardedCompletion(
  * The client sees live analysis progress, then gets the final result.
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 });
+  }
+
   const { text, title, fileName, model } = body as {
     text: string;
     title: string;
@@ -256,7 +262,8 @@ export async function POST(request: NextRequest) {
         const flowProcess = Array.isArray(coreResult.flow_process) ? coreResult.flow_process : [];
 
         // Save core results to DB
-        await supabase.from('brd_documents').update({ flow_process: flowProcess }).eq('id', documentId);
+        const { error: flowErr } = await supabase.from('brd_documents').update({ flow_process: flowProcess }).eq('id', documentId);
+        if (flowErr) send('error', `Flow update failed: ${flowErr.message}`);
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
 
         if (features.length > 0) {
@@ -284,7 +291,8 @@ export async function POST(request: NextRequest) {
             dependencies_and_risks: typeof f.dependencies_and_risks === 'string' ? f.dependencies_and_risks : '',
             accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
           }));
-          await supabase.from('brd_features').insert(featureRows);
+          const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
+          if (featErr) send('error', `Feature insert failed: ${featErr.message}`);
         }
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'features' });
 
@@ -332,7 +340,7 @@ export async function POST(request: NextRequest) {
         const useCaseScenarios = Array.isArray(advisoryResult.USE_CASE_SCENARIOS) ? advisoryResult.USE_CASE_SCENARIOS.slice(0, 20) : [];
 
         // Save advisory to DB
-        await supabase.from('brd_documents').update({
+        const { error: advErr } = await supabase.from('brd_documents').update({
           improvements,
           questions,
           risk_analysis: riskAnalysis,
@@ -341,6 +349,7 @@ export async function POST(request: NextRequest) {
           use_case_scenarios: useCaseScenarios,
           analysis_status: 'completed',
         }).eq('id', documentId);
+        if (advErr) send('error', `Advisory save failed: ${advErr.message}`);
 
         // Send final complete event
         send('complete', JSON.stringify({

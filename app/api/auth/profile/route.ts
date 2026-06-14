@@ -3,8 +3,14 @@ import { createClient } from '@/lib/supabase/server';
 import { validateDisplayName } from '@/lib/auth/validation';
 
 export async function PATCH(request: NextRequest) {
-  const body = await request.json();
-  const nameErr = validateDisplayName(body.displayName ?? '');
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  const nameErr = validateDisplayName(typeof body.displayName === 'string' ? body.displayName : '');
 
   if (nameErr) {
     return NextResponse.json({ error: nameErr }, { status: 400 });
@@ -12,7 +18,7 @@ export async function PATCH(request: NextRequest) {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({
-    data: { display_name: body.displayName.trim() },
+    data: { display_name: (body.displayName as string).trim() },
   });
 
   if (error) {

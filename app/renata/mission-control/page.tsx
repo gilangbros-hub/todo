@@ -41,6 +41,7 @@ export default function MissionControlPage() {
   // Document history state
   const [documents, setDocuments] = useState<BrdDocument[]>([]);
   const [isLoadingDocs, setIsLoadingDocs] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const hasInput = selectedFile !== null || pasteText.trim().length > 0;
 
@@ -48,10 +49,12 @@ export default function MissionControlPage() {
   const fetchDocuments = useCallback(async () => {
     try {
       setIsLoadingDocs(true);
+      setHistoryError(null);
       const docs = await getBrdDocuments();
       setDocuments(docs.slice(0, 5));
     } catch (err) {
-      console.error('Failed to fetch documents:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to load recent documents';
+      setHistoryError(msg);
     } finally {
       setIsLoadingDocs(false);
     }
@@ -64,10 +67,12 @@ export default function MissionControlPage() {
   // Handle document deletion
   const handleDeleteDocument = async (id: string) => {
     try {
+      setHistoryError(null);
       await deleteBrdDocument(id);
       await fetchDocuments();
     } catch (err) {
-      console.error('Failed to delete document:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to delete document';
+      setHistoryError(msg);
     }
   };
 
@@ -478,6 +483,13 @@ export default function MissionControlPage() {
             </button>
           </div>
           
+          {historyError && (
+            <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-sys-error/10 border border-sys-error/20 rounded-xl text-sys-error text-sm font-geist">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              <span>{historyError}</span>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[600px]">
               <thead>

@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
           .from('brd_documents')
           .update({ flow_process: flowProcess })
           .eq('id', documentId);
-        if (updErr) console.error('Flow update failed:', updErr);
+        if (updErr) throw new Error(`Flow update failed: ${updErr.message}`);
 
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
 
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
             accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
           }));
           const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
-          if (featErr) console.error('Feature insert failed:', featErr);
+          if (featErr) throw new Error(`Feature insert failed: ${featErr.message}`);
         }
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'features' });
 
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
             use_case_scenarios: useCaseScenarios,
           })
           .eq('id', documentId);
-        if (updErr) console.error('Advisory update failed:', updErr);
+        if (updErr) throw new Error(`Advisory update failed: ${updErr.message}`);
 
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'improvements' });
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'questions' });
@@ -254,10 +254,11 @@ export async function POST(request: NextRequest) {
       console.error('Additional prompts failed:', err);
     }
 
-    await supabase
+    const { error: statusErr } = await supabase
       .from('brd_documents')
       .update({ analysis_status: 'completed' })
       .eq('id', documentId);
+    if (statusErr) console.error('Status update to completed failed:', statusErr.message);
 
     return NextResponse.json({
       documentId,
