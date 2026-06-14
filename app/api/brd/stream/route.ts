@@ -8,18 +8,13 @@ import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
 import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 import { RepetitionGuard } from '@/lib/brd/repetition';
 import { sanitizeMermaid } from '@/lib/brd/mermaid';
-import { sanitizeImageReferences } from '@/lib/brd/sanitize';
-import { chunkText } from '@/lib/brd/chunking';
-import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
+import { sanitizeBrdText, validateTextLength, stripMarkdownFences } from '@/lib/brd/text';
+import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
+import { mapFeatureRows } from '@/lib/brd/features';
+import { runChunkExtraction } from '@/lib/brd/pipeline';
 
-// Vercel Hobby enforces a 4.5 MB function payload limit.
-// JSON-encoding 300 K chars costs ~600 KB, leaving plenty of headroom.
-// The map-reduce chunking pipeline handles large docs server-side anyway.
-const MAX_INPUT_CHARS = 300_000;
 export const maxDuration = 300;
 export const runtime = 'nodejs';
-
-const ALLOWED_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'];
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
@@ -131,24 +126,16 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: 'Invalid input' }), { status: 400 });
   }
 
-  let cleanText = text
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
+  const cleanText = sanitizeBrdText(text);
 
-  cleanText = sanitizeImageReferences(cleanText);
-
-  if (cleanText.length < 50) {
-    return new Response(JSON.stringify({ error: 'Document contains no readable text after sanitization' }), { status: 400 });
-  }
-  if (cleanText.length > MAX_INPUT_CHARS) {
-    return new Response(JSON.stringify({ error: 'Text too long' }), { status: 400 });
+  const lengthErr = validateTextLength(cleanText);
+  if (lengthErr) {
+    return new Response(JSON.stringify({ error: lengthErr.error }), { status: lengthErr.status });
   }
 
-  const selectedModel = model && ALLOWED_MODELS.includes(model) ? model : 'deepseek-v4-pro';
+  const selectedModel = selectModel(model);
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey = getDeepSeekApiKey();
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'Missing DeepSeek API key' }), { status: 500 });
   }
@@ -156,10 +143,7 @@ export async function POST(request: NextRequest) {
   const trimmedText = cleanText;
   const supabase = await createClient();
 
-  const openai = new OpenAI({
-    baseURL: 'https://api.deepseek.com',
-    apiKey,
-  });
+  const openai = createDeepSeekClient(apiKey);
 
   // Create document record
   const { data: doc, error: docError } = await supabase
@@ -197,26 +181,7 @@ export async function POST(request: NextRequest) {
           send('phase', 'chunking');
           send('status', 'Document is large. Splitting for parallel extraction...');
           
-          const chunks = chunkText(trimmedText, 25000, 1000);
-          send('status', `Processing ${chunks.length} chunks in parallel...`);
-
-          const extractionPromises = chunks.map(async (chunk) => {
-            try {
-              const res = await openai.chat.completions.create({
-                model: 'deepseek-chat', // Fast, cheap model for extraction
-                messages: [{ role: 'user', content: buildExtractionPrompt(chunk.content, chunk.index, chunks.length) }],
-                temperature: 0.1,
-              });
-              return res.choices[0]?.message?.content || '';
-            } catch (err) {
-              console.error(`Chunk ${chunk.index} failed:`, err);
-              return ''; // Gracefully fail chunk
-            }
-          });
-
-          const extractedContents = await Promise.all(extractionPromises);
-          finalAnalysisText = extractedContents.filter(Boolean).join('\n\n---\n\n');
-          finalAnalysisText = sanitizeImageReferences(finalAnalysisText);
+          finalAnalysisText = await runChunkExtraction(openai, trimmedText);
           send('status', 'Extraction complete. Starting distilled core analysis...');
         } else {
           send('status', 'Starting core analysis...');
@@ -229,7 +194,7 @@ export async function POST(request: NextRequest) {
           openai,
           selectedModel,
           [
-            { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
+            { role: 'system', content: BA_SYSTEM_PROMPT },
             { role: 'user', content: buildCorePrompt(finalAnalysisText) },
           ],
           (tok) => send('reasoning', tok),
@@ -245,11 +210,7 @@ export async function POST(request: NextRequest) {
         send('status', 'Core analysis complete. Processing results...');
 
         // Parse core result
-        const coreClean = coreContent
-          .replace(/^```json\s*/i, '')
-          .replace(/^```\s*/i, '')
-          .replace(/\s*```$/i, '')
-          .trim();
+        const coreClean = stripMarkdownFences(coreContent);
 
         let coreResult: { features?: unknown[]; flow_process?: unknown[] } = { features: [], flow_process: [] };
         try {
@@ -267,30 +228,7 @@ export async function POST(request: NextRequest) {
         await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
 
         if (features.length > 0) {
-          const featureRows = (features as Record<string, unknown>[]).map((f) => ({
-            document_id: documentId,
-            feature_id: typeof f.feature_id === 'string' ? f.feature_id.slice(0, 50) : 'F-UNKNOWN',
-            name: typeof f.name === 'string' ? f.name.slice(0, 100) : 'Unnamed',
-            description: typeof f.description === 'string' ? f.description.slice(0, 800) : '',
-            requirement_classification: (() => {
-              const raw = String(f.requirement_classification || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
-              const valid = ['business_requirement', 'stakeholder_requirement', 'functional_requirement', 'non_functional_requirement', 'transition_requirement'];
-              if (valid.includes(raw)) return raw;
-              console.warn('Rejected requirement_classification, falling back to functional_requirement:', f.requirement_classification);
-              return 'functional_requirement';
-            })(),
-            priority_moscow: ['must_have', 'should_have', 'could_have', 'wont_have'].includes(String(f.priority_moscow))
-              ? f.priority_moscow : 'should_have',
-            business_value: typeof f.business_value === 'string' ? f.business_value : '',
-            capability_gap: typeof f.capability_gap === 'string' ? f.capability_gap : '',
-            business_rules: Array.isArray(f.business_rules) ? f.business_rules.filter((r: unknown) => typeof r === 'string') : [],
-            stakeholders: Array.isArray(f.stakeholders) ? f.stakeholders.filter((r: unknown) => typeof r === 'string') : [],
-            preconditions: typeof f.preconditions === 'string' ? f.preconditions : '',
-            postconditions: typeof f.postconditions === 'string' ? f.postconditions : '',
-            acceptance_criteria: Array.isArray(f.acceptance_criteria) ? f.acceptance_criteria.filter((r: unknown) => typeof r === 'string') : [],
-            dependencies_and_risks: typeof f.dependencies_and_risks === 'string' ? f.dependencies_and_risks : '',
-            accounting_impact: typeof f.accounting_impact === 'string' ? f.accounting_impact : '',
-          }));
+          const featureRows = mapFeatureRows(features, documentId);
           const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
           if (featErr) send('error', `Feature insert failed: ${featErr.message}`);
         }
@@ -306,7 +244,7 @@ export async function POST(request: NextRequest) {
           openai,
           selectedModel,
           [
-            { role: 'system', content: 'You are an expert senior business analyst with 15+ years of experience in enterprise requirements analysis, process modeling, and system documentation. Respond only with valid JSON.' },
+            { role: 'system', content: BA_SYSTEM_PROMPT },
             { role: 'user', content: buildAdvisoryPrompt(finalAnalysisText) },
           ],
           (tok) => send('reasoning', tok),
@@ -317,11 +255,7 @@ export async function POST(request: NextRequest) {
         send('status', 'Advisory analysis complete. Processing...');
 
         // Parse advisory result
-        const advisoryClean = advisoryContent
-          .replace(/^```json\s*/i, '')
-          .replace(/^```\s*/i, '')
-          .replace(/\s*```$/i, '')
-          .trim();
+        const advisoryClean = stripMarkdownFences(advisoryContent);
 
         let advisoryResult: Record<string, unknown> = {};
         try {

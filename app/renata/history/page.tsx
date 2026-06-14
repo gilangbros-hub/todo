@@ -1,53 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { History, Loader, ExternalLink, Trash2, AlertCircle } from 'lucide-react';
-import { useRenata } from '@/lib/renata/context';
-import { getBrdDocuments, deleteBrdDocument } from '@/lib/services/brd';
-import { BrdDocument } from '@/lib/types';
+import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
+import { StatusBadge } from '@/components/renata/StatusBadge';
 
 export default function HistoryPage() {
   const router = useRouter();
-  const { setActiveDocument } = useRenata();
-  const [documents, setDocuments] = useState<BrdDocument[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const fetchDocuments = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setFetchError(null);
-      const docs = await getBrdDocuments();
-      setDocuments(docs);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load analysis history';
-      setFetchError(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchDocuments();
-  }, [fetchDocuments]);
-
-  const handleDelete = async (id: string) => {
-    try {
-      setDeleteError(null);
-      await deleteBrdDocument(id);
-      await fetchDocuments();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete document';
-      setDeleteError(msg);
-    }
-  };
-
-  const handleView = (doc: BrdDocument) => {
-    setActiveDocument(doc);
-    router.push('/renata/results');
-  };
+  const { documents, isLoading, error, handleDelete, handleView } = useBrdDocuments();
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -56,10 +16,10 @@ export default function HistoryPage() {
         <p className="font-geist text-sm text-sys-muted mt-1">All uploaded BRD documents and their analysis results.</p>
       </div>
 
-      {(fetchError || deleteError) && (
+      {error && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-sys-error/10 border border-sys-error/20 rounded-xl text-sys-error text-sm font-geist">
           <AlertCircle size={16} className="flex-shrink-0" />
-          <span>{fetchError || deleteError}</span>
+          <span>{error}</span>
         </div>
       )}
 
@@ -99,14 +59,7 @@ export default function HistoryPage() {
                     </span>
                   </td>
                   <td className="py-3 px-4 hidden sm:table-cell">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                      doc.analysis_status === 'completed' ? 'bg-sys-success/10 text-sys-success border-sys-success/20' :
-                      doc.analysis_status === 'analyzing' ? 'bg-sys-primary-container/10 text-sys-primary border-sys-primary-container/20' :
-                      'bg-sys-error/10 text-sys-error border-sys-error/20'
-                    }`}>
-                      {doc.analysis_status === 'analyzing' && <Loader size={12} className="animate-spin" />}
-                      {doc.analysis_status === 'completed' ? 'Completed' : doc.analysis_status === 'analyzing' ? 'Processing' : 'Failed'}
-                    </span>
+                    <StatusBadge status={doc.analysis_status} />
                   </td>
                   <td className="py-3 px-4 text-sys-muted text-xs hidden md:table-cell">
                     {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
