@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Fetch document
     const { data: doc, error: docError } = await supabase
       .from('brd_documents')
-      .select('id, source_text, extracted_text, user_id')
+      .select('id, source_text, extracted_text, user_id, sections_completed')
       .eq('id', documentId)
       .single();
 
