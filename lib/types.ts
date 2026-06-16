@@ -36,6 +36,7 @@ export interface BrdDocument {
   user_id: string;
   title: string;
   source_text: string;
+  extracted_text: string;
   file_name: string | null;
   analysis_status: 'analyzing' | 'completed' | 'partial' | 'failed';
   sections_completed: string[];

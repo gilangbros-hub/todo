@@ -233,62 +233,95 @@ export default function MissionControlPage() {
         ? fileName.replace(/\.(pdf|txt)$/i, '')
         : text.slice(0, 60).split('\n')[0] || 'Untitled Analysis';
 
-      const response = await fetch('/api/brd/stream', {
+      // Initialize analysis - create document record
+      setStatusText('Initializing analysis...');
+      const initResponse = await fetch('/api/brd/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, title, fileName, model }),
         signal: abort.signal,
       });
 
-      if (response.status === 413) {
-        throw new Error('Document text is too large for analysis. Please reduce the document size and try again.');
+      if (!initResponse.ok) {
+        const initErr = await initResponse.json();
+        throw new Error(initErr.error || 'Failed to initialize analysis');
       }
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Analysis request failed');
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response stream');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // Any bytes from the server reset the idle clock.
-        lastDataRef.current = Date.now();
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let currentEvent = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7);
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            handleSSEEvent(currentEvent, data);
-          }
+      const { documentId } = await initResponse.json();
+      
+      // Poll for status updates
+      const pollStatus = async () => {
+        const statusResponse = await fetch(`/api/brd/status?documentId=${documentId}`);
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          setStatusText(`Progress: ${statusData.message} (${statusData.progress}%)`);
         }
+      };
+
+      // Perform extraction if needed
+      setStatusText('Performing extraction...');
+      await pollStatus();
+      const extractResponse = await fetch('/api/brd/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+        signal: abort.signal,
+      });
+
+      if (!extractResponse.ok) {
+        const extractErr = await extractResponse.json();
+        throw new Error(extractErr.error || 'Extraction phase failed');
       }
 
-      if (buffer.trim()) {
-        const lines = buffer.split('\n');
-        let currentEvent = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7);
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            handleSSEEvent(currentEvent, data);
-          }
-        }
+      // Perform core analysis
+      setStatusText('Performing core analysis (features and flow)...');
+      await pollStatus();
+      const coreResponse = await fetch('/api/brd/core', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+        signal: abort.signal,
+      });
+
+      if (!coreResponse.ok) {
+        const coreErr = await coreResponse.json();
+        throw new Error(coreErr.error || 'Core analysis failed');
       }
+
+      // Perform advisory analysis
+      setStatusText('Performing advisory analysis (improvements, risks, etc.)...');
+      await pollStatus();
+      const advisoryResponse = await fetch('/api/brd/advisory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+        signal: abort.signal,
+      });
+
+      if (!advisoryResponse.ok) {
+        const advisoryErr = await advisoryResponse.json();
+        throw new Error(advisoryErr.error || 'Advisory analysis failed');
+      }
+
+      // Perform enrichment analysis
+      setStatusText('Performing enrichment analysis (discovery, optimization, solutions)...');
+      await pollStatus();
+      const enrichResponse = await fetch('/api/brd/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+        signal: abort.signal,
+      });
+
+      if (!enrichResponse.ok) {
+        const enrichErr = await enrichResponse.json();
+        throw new Error(enrichErr.error || 'Enrichment analysis failed');
+      }
+
+      // Final status check
+      setStatusText('Analysis complete! Refreshing data...');
+      await refreshData();
+      router.push('/renata/results');
     } catch (err) {
       // Abort errors are expected when the user clicks Stop or a timeout fires.
       if (abort.signal.aborted) {
@@ -309,38 +342,7 @@ export default function MissionControlPage() {
     }
   };
 
-  const handleSSEEvent = (event: string, data: string) => {
-    switch (event) {
-      case 'phase':
-        if (data === 'core') {
-          setPhase('core');
-          setStatusText('Core analysis in progress...');
-        } else if (data === 'advisory') {
-          setPhase('advisory');
-          setStatusText('Advisory analysis in progress...');
-        }
-        break;
-      case 'status':
-        setStatusText(data);
-        break;
-      case 'reasoning':
-        setReasoning((prev) => prev + data);
-        break;
-      case 'error':
-        setError(data);
-        setPhase('error');
-        setIsAnalyzing(false);
-        break;
-      case 'complete':
-        setPhase('complete');
-        setStatusText('Analysis complete!');
-        setIsAnalyzing(false);
-        refreshData().then(() => {
-          router.push('/renata/results');
-        });
-        break;
-    }
-  };
+
 
   if (isAnalyzing || phase === 'complete') {
     return (

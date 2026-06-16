@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "railway-build": "npm run build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

@@ -18,7 +18,7 @@ import {
   MOCK_SOLUTIONS, MOCK_RISKS, MOCK_ADVISORY,
 } from '@/lib/renata/mock-data';
 
-type TabId = 'requirements' | 'process' | 'discovery' | 'optimization' | 'solutions' | 'deepdive';
+type TabId = 'requirements' | 'process' | 'discovery' | 'optimization' | 'solutions' | 'deepdive' | 'extraction';
 
 const TABS: { id: TabId; label: string; icon: any; color: string }[] = [
   { id: 'requirements', label: 'Requirements Matrix', icon: ClipboardList, color: 'text-sys-primary' },
@@ -26,6 +26,7 @@ const TABS: { id: TabId; label: string; icon: any; color: string }[] = [
   { id: 'discovery', label: 'Discovery Questions', icon: HelpCircle, color: 'text-indigo-500' },
   { id: 'optimization', label: 'AI Optimization', icon: Lightbulb, color: 'text-purple-500' },
   { id: 'solutions', label: 'AI Solutions', icon: Cpu, color: 'text-cyan-500' },
+  { id: 'extraction', label: 'Source & Extraction', icon: FileText, color: 'text-sys-info' },
   { id: 'deepdive', label: 'BA Deep-Dive', icon: Shield, color: 'text-sys-warning' },
 ];
 
@@ -335,6 +336,52 @@ export default function ResultsPage() {
                   </div>
                 </ExpandableCard>
               ))}
+            </div>
+          </>
+        )}
+
+        {activeTab === 'extraction' && (
+          <>
+            <SectionHeader icon={FileText} title="Source & Extraction" subtitle="Original BRD content and AI-extracted key information for analysis." />
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-outfit font-extrabold text-lg text-sys-text mb-3">Original Source Text</h3>
+                <div className="bg-sys-bg border border-sys-border rounded-xl p-4 max-h-96 overflow-y-auto">
+                  <pre className="font-geist text-sm text-sys-text whitespace-pre-wrap break-words">
+                    {activeDocument?.source_text || 'No source text available'}
+                  </pre>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-outfit font-extrabold text-lg text-sys-text mb-3">AI-Extracted Content</h3>
+                <div className="bg-sys-bg border border-sys-border rounded-xl p-4 max-h-96 overflow-y-auto">
+                  <pre className="font-geist text-sm text-sys-text whitespace-pre-wrap break-words">
+                    {activeDocument?.extracted_text || 'No extracted content available (extraction may not have been needed or failed)'}
+                  </pre>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-sys-surface border border-sys-border rounded-xl p-4">
+                  <h4 className="font-geist font-bold text-sys-muted uppercase tracking-wider text-xs mb-2">Document Info</h4>
+                  <ul className="font-geist text-sm space-y-1">
+                    <li><span className="text-sys-faint">Title:</span> <span className="text-sys-text">{activeDocument?.title}</span></li>
+                    <li><span className="text-sys-faint">File:</span> <span className="text-sys-text">{activeDocument?.file_name || 'Uploaded text'}</span></li>
+                    <li><span className="text-sys-faint">Source chars:</span> <span className="text-sys-text">{activeDocument?.source_text?.length?.toLocaleString() || 0}</span></li>
+                    <li><span className="text-sys-faint">Extracted chars:</span> <span className="text-sys-text">{activeDocument?.extracted_text?.length?.toLocaleString() || 0}</span></li>
+                  </ul>
+                </div>
+                
+                <div className="bg-sys-surface border border-sys-border rounded-xl p-4">
+                  <h4 className="font-geist font-bold text-sys-muted uppercase tracking-wider text-xs mb-2">Analysis Status</h4>
+                  <ul className="font-geist text-sm space-y-1">
+                    <li><span className="text-sys-faint">Status:</span> <span className="text-sys-text capitalize">{activeDocument?.analysis_status}</span></li>
+                    <li><span className="text-sys-faint">Sections completed:</span> <span className="text-sys-text">{activeDocument?.sections_completed?.join(', ') || 'None'}</span></li>
+                    <li><span className="text-sys-faint">Created:</span> <span className="text-sys-text">{new Date(activeDocument?.created_at || '').toLocaleString()}</span></li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </>
         )}

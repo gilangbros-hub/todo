@@ -109,6 +109,21 @@ const nextConfig = {
       { source: '/oracle/:path*', destination: '/renata/mission-control', permanent: true },
     ];
   },
+
+  // Proxy /api/brd/* requests to Railway for long-running analysis operations.
+  // Railway supports 300s timeouts vs Vercel Hobby's 10s limit.
+  // Set RAILWAY_API_URL env var to your Railway deployment URL (e.g. https://your-app.up.railway.app)
+  async rewrites() {
+    const railwayUrl = process.env.RAILWAY_API_URL;
+    if (!railwayUrl) return [];
+
+    return [
+      {
+        source: '/api/brd/:path*',
+        destination: `${railwayUrl}/api/brd/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
