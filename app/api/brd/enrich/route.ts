@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         source_text, 
         extracted_text, 
         user_id, 
+        analysis_status,
         sections_completed,
         brd_features (
           feature_id,
