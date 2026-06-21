@@ -115,7 +115,7 @@ const nextConfig = {
   // Set RAILWAY_API_URL env var to your Railway deployment URL (e.g. https://your-app.up.railway.app)
   async rewrites() {
     const railwayUrl = process.env.RAILWAY_API_URL;
-    if (!railwayUrl) return [];
+    if (!railwayUrl || !/^https?:\/\//.test(railwayUrl)) return [];
 
     return [
       {
