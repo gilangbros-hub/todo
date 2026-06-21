@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/server';
 
 /**
@@ -23,7 +25,7 @@ export async function GET(request: NextRequest) {
     // Fetch document
     const { data: doc, error: docError } = await supabase
       .from('brd_documents')
-      .select('id, title, analysis_status, sections_completed, created_at, updated_at')
+      .select('id, title, user_id, analysis_status, sections_completed, created_at, updated_at')
       .eq('id', documentId)
       .single();
 
