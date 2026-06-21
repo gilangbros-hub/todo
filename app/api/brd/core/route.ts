@@ -8,11 +8,11 @@ import { buildCorePrompt } from '@/lib/brd/prompts/core';
  * Updates the document with features (saved to brd_features table) and flow_process.
  */
 export async function POST(request: NextRequest) {
+  let documentId: string | undefined;
   try {
     const body = await request.json();
-    const { documentId } = body as {
-      documentId: string;
-    };
+    const parsed = body as { documentId: string };
+    documentId = parsed.documentId;
 
     if (!documentId || typeof documentId !== 'string') {
       return NextResponse.json(
@@ -199,11 +199,13 @@ export async function POST(request: NextRequest) {
     
     // Update document status to failed
     try {
-      const supabase = await createClient();
-      await supabase
-        .from('brd_documents')
-        .update({ analysis_status: 'failed' })
-        .eq('id', documentId);
+      if (documentId) {
+        const supabase = await createClient();
+        await supabase
+          .from('brd_documents')
+          .update({ analysis_status: 'failed' })
+          .eq('id', documentId);
+      }
     } catch (updateError) {
       console.error('Failed to update document status to failed:', updateError);
     }
