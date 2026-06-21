@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
-import { createClient } from '@/lib/supabase/server';
 
 /**
  * Get the current status of a BRD analysis document.
