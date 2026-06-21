@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
       await supabase
         .from('brd_documents')
         .update({ analysis_status: 'failed' })
-        .eq('id', (request.json as any)?.documentId || '');
+        .eq('id', documentId);
     } catch (updateError) {
       console.error('Failed to update document status to failed:', updateError);
     }
