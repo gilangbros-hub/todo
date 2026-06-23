@@ -320,6 +320,7 @@ function MissionControlInner() {
     if (resumeId && !isAnalyzing) {
       handleResume(resumeId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (isAnalyzing || phase === 'complete') {
