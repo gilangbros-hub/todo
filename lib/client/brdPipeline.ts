@@ -3,6 +3,7 @@ export type PipelinePhase = 'idle' | 'parsing' | 'core' | 'advisory' | 'complete
 interface PipelineCallbacks {
   onPhase: (phase: PipelinePhase) => void;
   onStatus: (status: string) => void;
+  onActivity?: () => void;
 }
 
 interface StatusData {
@@ -27,6 +28,7 @@ async function pollUntilComplete(
   requiredSections: string[],
   signal: AbortSignal,
   onStatus: (s: string) => void,
+  onActivity?: () => void,
   timeoutMs = 240_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -34,6 +36,10 @@ async function pollUntilComplete(
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     await new Promise((r) => setTimeout(r, 4_000));
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    
+    // Reset idle timer since we are actively polling and alive
+    onActivity?.();
+
     const status = await getStatus(documentId);
     if (!status) continue;
     onStatus(`Progress: ${status.message} (${status.progress}%)`);
@@ -46,10 +52,11 @@ async function pollUntilComplete(
 export async function runBrdAnalysisPipeline(
   documentId: string,
   signal: AbortSignal,
-  { onPhase, onStatus }: PipelineCallbacks
+  { onPhase, onStatus, onActivity }: PipelineCallbacks
 ): Promise<void> {
   const post = async (path: string, requiredSections: string[]) => {
     onStatus(`Calling ${path.split('/').pop()}...`);
+    onActivity?.();
 
     let fetchFailed = false;
     try {
@@ -70,8 +77,8 @@ export async function runBrdAnalysisPipeline(
     }
 
     if (fetchFailed) {
-      onStatus('Request timed out — checking if server completed the step...');
-      await pollUntilComplete(documentId, requiredSections, signal, onStatus);
+      onStatus('Checking if server completed the step...');
+      await pollUntilComplete(documentId, requiredSections, signal, onStatus, onActivity);
     }
   };
 

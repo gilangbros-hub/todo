@@ -258,6 +258,9 @@ function MissionControlInner() {
       await runBrdAnalysisPipeline(documentId, abort.signal, {
         onPhase: (p) => setPhase(p as AnalysisPhase),
         onStatus: setStatusText,
+        onActivity: () => {
+          lastDataRef.current = Date.now();
+        },
       });
 
       setStatusText('Analysis complete! Refreshing data...');
@@ -294,6 +297,9 @@ function MissionControlInner() {
       await runBrdAnalysisPipeline(documentId, abort.signal, {
         onPhase: (p) => setPhase(p as AnalysisPhase),
         onStatus: setStatusText,
+        onActivity: () => {
+          lastDataRef.current = Date.now();
+        },
       });
 
       setStatusText('Analysis complete! Refreshing data...');
