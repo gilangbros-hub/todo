@@ -113,31 +113,9 @@ const nextConfig = {
   // Proxy /api/brd/* requests to Railway for long-running analysis operations.
   // Railway supports 300s timeouts vs Vercel Hobby's 10s limit.
   // Set RAILWAY_API_URL env var to your Railway deployment URL (e.g. https://your-app.up.railway.app)
-  // Proxy /api/brd/* requests to Railway for long-running analysis operations.
-  // Railway supports 300s timeouts vs Vercel Hobby's 10s limit.
-  // Set RAILWAY_API_URL env var to your Railway deployment URL (e.g. https://your-app.up.railway.app)
+  // Next.js rewrites - removed proxy to external services
   async rewrites() {
-    const railwayUrl = process.env.RAILWAY_API_URL;
-    if (!railwayUrl || !/^https?:\/\//.test(railwayUrl)) return [];
-
-    return [
-      {
-        source: '/api/brd/extract',
-        destination: `${railwayUrl}/api/brd/extract`,
-      },
-      {
-        source: '/api/brd/core',
-        destination: `${railwayUrl}/api/brd/core`,
-      },
-      {
-        source: '/api/brd/advisory',
-        destination: `${railwayUrl}/api/brd/advisory`,
-      },
-      {
-        source: '/api/brd/enrich',
-        destination: `${railwayUrl}/api/brd/enrich`,
-      },
-    ];
+    return [];
   },
 };
 
