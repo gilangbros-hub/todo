@@ -409,7 +409,8 @@ export async function POST(request: NextRequest) {
                 advisoryResult = JSON.parse(salvaged);
                 send('status', 'Successfully salvaged partial advisory data.');
               } catch (salvageErr) {
-                send('error', `Advisory JSON salvage failed: ${(e as Error).message}`);
+                // Ignore salvage errors so we can at least return empty arrays and mark as complete
+                send('status', 'Advisory JSON salvage failed, continuing with partial data.');
               }
             }
           }

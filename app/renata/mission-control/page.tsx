@@ -334,11 +334,7 @@ function MissionControlInner() {
             currentEvent = line.slice(7);
           } else if (line.startsWith('data: ')) {
             const data = line.slice(6);
-            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
-               console.warn("Salvage failed, skipping fatal error to try and complete.");
-            } else {
-               handleSSEEvent(currentEvent, data);
-            }
+            handleSSEEvent(currentEvent, data);
           }
         }
       }
@@ -351,11 +347,7 @@ function MissionControlInner() {
             currentEvent = line.slice(7);
           } else if (line.startsWith('data: ')) {
             const data = line.slice(6);
-            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
-               console.warn("Salvage failed, skipping fatal error to try and complete.");
-            } else {
-               handleSSEEvent(currentEvent, data);
-            }
+            handleSSEEvent(currentEvent, data);
           }
         }
       }
