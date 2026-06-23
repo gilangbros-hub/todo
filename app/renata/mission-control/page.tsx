@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef, useCallback, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Brain, Upload, Play, CloudUpload, AlertCircle, FileText,
   Bell, Settings, ArrowRight, Loader, ExternalLink, Trash2,
-  Square,
+  Square, RotateCcw,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { parsePdfWithSplit } from '@/lib/client/pdf';
 import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
 import { StatusBadge } from '@/components/renata/StatusBadge';
+import { runBrdAnalysisPipeline } from '@/lib/client/brdPipeline';
+import { cancelBrdAnalysis, getBrdDocumentById } from '@/lib/services/brd';
 
 const MODELS = [
   { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: 'Comprehensive BRD analysis with gap identification, risk assessment, and enterprise-standard requirement extraction.' },
@@ -18,44 +20,39 @@ const MODELS = [
 
 type AnalysisPhase = 'idle' | 'parsing' | 'core' | 'advisory' | 'complete' | 'error';
 
-export default function MissionControlPage() {
-  const router = useRouter();
-  const { refreshData } = useRenata();
+const TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 25_000;
 
-  // Input state
+function MissionControlInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { refreshData, setActiveDocument } = useRenata();
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [model, setModel] = useState<string>('deepseek-v4-pro');
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Analysis state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [phase, setPhase] = useState<AnalysisPhase>('idle');
   const [statusText, setStatusText] = useState('');
   const [reasoning, setReasoning] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [resumeDocumentId, setResumeDocumentId] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const reasoningEndRef = useRef<HTMLDivElement>(null);
 
-  // Stream lifecycle refs — abort controller, idle detection
   const abortRef = useRef<AbortController | null>(null);
+  const activeDocumentIdRef = useRef<string | null>(null);
   const lastDataRef = useRef<number>(Date.now());
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  /** Total analysis hard-cap (5 min). */
-  const TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
-  /** If no SSE data arrives for this long, assume the connection died. */
-  const IDLE_TIMEOUT_MS = 25_000;
-
-  // Document history
   const { documents, isLoading: isLoadingDocs, error: historyError, handleDelete: handleDeleteDocument, handleView: handleViewDocument } = useBrdDocuments({ limit: 5 });
 
   const hasInput = selectedFile !== null || pasteText.trim().length > 0;
 
-
-  // Elapsed time counter
   useEffect(() => {
     if (isAnalyzing) {
       setElapsedSeconds(0);
@@ -73,12 +70,18 @@ export default function MissionControlPage() {
     };
   }, [isAnalyzing]);
 
-  // Auto-scroll reasoning
   useEffect(() => {
     if (reasoningEndRef.current) {
       reasoningEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [reasoning]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -97,11 +100,8 @@ export default function MissionControlPage() {
     }
   };
 
-  // File validation
   const validateFile = (file: File): string | null => {
-    // PDFs are automatically split into Vercel-safe chunks client-side.
-    // Allow up to 25 MB — larger files may cause browser memory issues.
-    const maxSize = 25 * 1024 * 1024; // 25 MB
+    const maxSize = 25 * 1024 * 1024;
     const allowedTypes = ['application/pdf', 'text/plain'];
     const allowedExtensions = ['.pdf', '.txt'];
 
@@ -117,7 +117,6 @@ export default function MissionControlPage() {
     return null;
   };
 
-  // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -162,8 +161,7 @@ export default function MissionControlPage() {
     }
   }, []);
 
-  // Read file as text or parse PDF
-  const MAX_TEXT_CHARS = 300_000; // ~600 KB JSON — safely under Vercel's 4.5 MB limit
+  const MAX_TEXT_CHARS = 300_000;
 
   const getDocumentText = async (): Promise<{ text: string; fileName: string | null }> => {
     if (pasteText.trim()) {
@@ -178,46 +176,53 @@ export default function MissionControlPage() {
       return { text: raw.slice(0, MAX_TEXT_CHARS), fileName: selectedFile.name };
     }
 
-    // PDF: transparently split into Vercel-safe chunks if needed
     return parsePdfWithSplit(selectedFile, (msg) => setStatusText(msg));
   };
 
-  // Stop a running analysis (called by the Stop button or timeouts).
-  const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
-
-  // Clean up stream resources on unmount.
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
-    };
-  }, []);
-
-  // Submit analysis
-  const handleSubmit = async () => {
-    if (!hasInput || isAnalyzing) return;
-
+  const makeAbortSetup = () => {
     const abort = new AbortController();
     abortRef.current = abort;
     lastDataRef.current = Date.now();
+
+    const totalTimer = setTimeout(() => abort.abort(), TOTAL_TIMEOUT_MS);
+
+    idleTimerRef.current = setInterval(() => {
+      if (Date.now() - lastDataRef.current > IDLE_TIMEOUT_MS) {
+        abort.abort();
+      }
+    }, 5_000);
+
+    const cleanup = () => {
+      clearTimeout(totalTimer);
+      if (idleTimerRef.current) {
+        clearInterval(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      abortRef.current = null;
+    };
+
+    return { abort, cleanup };
+  };
+
+  const handleStop = useCallback(() => {
+    const docId = activeDocumentIdRef.current;
+    abortRef.current?.abort();
+    if (docId) {
+      cancelBrdAnalysis(docId).catch(() => {});
+    }
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!hasInput || isAnalyzing) return;
+
+    const { abort, cleanup } = makeAbortSetup();
 
     setIsAnalyzing(true);
     setPhase('parsing');
     setStatusText('Reading document...');
     setReasoning('');
     setError(null);
-
-    // Hard timeout for the entire analysis.
-    const totalTimer = setTimeout(() => abort.abort(), TOTAL_TIMEOUT_MS);
-
-    // Idle detection — if no bytes arrive for IDLE_TIMEOUT_MS, abort.
-    idleTimerRef.current = setInterval(() => {
-      if (Date.now() - lastDataRef.current > IDLE_TIMEOUT_MS) {
-        abort.abort();
-      }
-    }, 5_000);
+    setResumeDocumentId(null);
 
     try {
       const { text, fileName } = await getDocumentText();
@@ -233,7 +238,6 @@ export default function MissionControlPage() {
         ? fileName.replace(/\.(pdf|txt)$/i, '')
         : text.slice(0, 60).split('\n')[0] || 'Untitled Analysis';
 
-      // Initialize analysis - create document record
       setStatusText('Initializing analysis...');
       const initResponse = await fetch('/api/brd/init', {
         method: 'POST',
@@ -248,82 +252,18 @@ export default function MissionControlPage() {
       }
 
       const { documentId } = await initResponse.json();
-      
-      // Poll for status updates
-      const pollStatus = async () => {
-        const statusResponse = await fetch(`/api/brd/status?documentId=${documentId}`);
-        if (statusResponse.ok) {
-          const statusData = await statusResponse.json();
-          setStatusText(`Progress: ${statusData.message} (${statusData.progress}%)`);
-        }
-      };
+      activeDocumentIdRef.current = documentId;
+      setResumeDocumentId(documentId);
 
-      // Perform extraction if needed
-      setStatusText('Performing extraction...');
-      await pollStatus();
-      const extractResponse = await fetch('/api/brd/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
-        signal: abort.signal,
+      await runBrdAnalysisPipeline(documentId, abort.signal, {
+        onPhase: (p) => setPhase(p as AnalysisPhase),
+        onStatus: setStatusText,
       });
 
-      if (!extractResponse.ok) {
-        const extractErr = await extractResponse.json();
-        throw new Error(extractErr.error || 'Extraction phase failed');
-      }
-
-      // Perform core analysis
-      setStatusText('Performing core analysis (features and flow)...');
-      await pollStatus();
-      const coreResponse = await fetch('/api/brd/core', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
-        signal: abort.signal,
-      });
-
-      if (!coreResponse.ok) {
-        const coreErr = await coreResponse.json();
-        throw new Error(coreErr.error || 'Core analysis failed');
-      }
-
-      // Perform advisory analysis
-      setStatusText('Performing advisory analysis (improvements, risks, etc.)...');
-      await pollStatus();
-      const advisoryResponse = await fetch('/api/brd/advisory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
-        signal: abort.signal,
-      });
-
-      if (!advisoryResponse.ok) {
-        const advisoryErr = await advisoryResponse.json();
-        throw new Error(advisoryErr.error || 'Advisory analysis failed');
-      }
-
-      // Perform enrichment analysis
-      setStatusText('Performing enrichment analysis (discovery, optimization, solutions)...');
-      await pollStatus();
-      const enrichResponse = await fetch('/api/brd/enrich', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
-        signal: abort.signal,
-      });
-
-      if (!enrichResponse.ok) {
-        const enrichErr = await enrichResponse.json();
-        throw new Error(enrichErr.error || 'Enrichment analysis failed');
-      }
-
-      // Final status check
       setStatusText('Analysis complete! Refreshing data...');
       await refreshData();
       router.push('/renata/results');
     } catch (err) {
-      // Abort errors are expected when the user clicks Stop or a timeout fires.
       if (abort.signal.aborted) {
         setError('Analysis was stopped. Any saved progress is available in your history.');
       } else {
@@ -333,16 +273,54 @@ export default function MissionControlPage() {
       setPhase('error');
       setIsAnalyzing(false);
     } finally {
-      clearTimeout(totalTimer);
-      if (idleTimerRef.current) {
-        clearInterval(idleTimerRef.current);
-        idleTimerRef.current = null;
-      }
-      abortRef.current = null;
+      cleanup();
     }
   };
 
+  const handleResume = useCallback(async (documentId: string) => {
+    if (isAnalyzing) return;
 
+    const { abort, cleanup } = makeAbortSetup();
+
+    activeDocumentIdRef.current = documentId;
+    setResumeDocumentId(documentId);
+    setIsAnalyzing(true);
+    setPhase('core');
+    setStatusText('Resuming analysis...');
+    setReasoning('');
+    setError(null);
+
+    try {
+      await runBrdAnalysisPipeline(documentId, abort.signal, {
+        onPhase: (p) => setPhase(p as AnalysisPhase),
+        onStatus: setStatusText,
+      });
+
+      setStatusText('Analysis complete! Refreshing data...');
+      const doc = await getBrdDocumentById(documentId);
+      setActiveDocument(doc);
+      await refreshData();
+      router.push('/renata/results');
+    } catch (err) {
+      if (abort.signal.aborted) {
+        setError('Analysis was stopped. Any saved progress is available in your history.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Unknown error occurred';
+        setError(msg);
+      }
+      setPhase('error');
+      setIsAnalyzing(false);
+    } finally {
+      cleanup();
+    }
+  }, [isAnalyzing, refreshData, router, setActiveDocument]);
+
+  useEffect(() => {
+    const resumeId = searchParams.get('resume');
+    if (resumeId && !isAnalyzing) {
+      handleResume(resumeId);
+    }
+  }, []);
 
   if (isAnalyzing || phase === 'complete') {
     return (
@@ -406,7 +384,6 @@ export default function MissionControlPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Section */}
       <header className="flex justify-between items-center mb-8">
         <div>
           <h2 className="font-outfit text-3xl font-bold text-sys-text tracking-tight">Welcome back, Gilang.</h2>
@@ -422,9 +399,7 @@ export default function MissionControlPage() {
         </div>
       </header>
 
-      {/* Bento Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
-        {/* Upload Zone (Hero Card) - Spans 8 columns */}
         <div className="lg:col-span-8 bg-sys-surface border border-sys-border rounded-3xl p-8 relative overflow-hidden group hover:border-sys-primary-container transition-all duration-300 shadow-sm flex flex-col justify-center">
           <div className="absolute inset-0 shimmer pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
           
@@ -480,12 +455,22 @@ export default function MissionControlPage() {
           {error && (
             <div className="mt-4 p-3 bg-sys-error/10 border border-sys-error/30 rounded-lg flex items-start gap-2 relative z-10">
               <AlertCircle size={16} className="text-sys-error shrink-0 mt-0.5" />
-              <p className="text-sys-error text-sm font-geist">{error}</p>
+              <div className="flex-1">
+                <p className="text-sys-error text-sm font-geist">{error}</p>
+                {resumeDocumentId && (
+                  <button
+                    onClick={() => handleResume(resumeDocumentId)}
+                    className="mt-2 flex items-center gap-1.5 text-sys-error text-sm font-geist font-semibold hover:underline cursor-pointer"
+                  >
+                    <RotateCcw size={14} />
+                    Resume Analysis
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* LLM Model section */}
         <div className="lg:col-span-4 bg-sys-surface border border-sys-border rounded-3xl p-5 flex flex-col shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <Brain size={20} className="text-sys-primary" />
@@ -502,7 +487,6 @@ export default function MissionControlPage() {
           </div>
         </div>
 
-        {/* Recent Analyses List - Spans full width */}
         <div className="lg:col-span-12 bg-sys-surface border border-sys-border rounded-3xl p-6 md:p-8 shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-outfit text-xl font-medium text-sys-text">Recent Analyses</h3>
@@ -567,6 +551,15 @@ export default function MissionControlPage() {
                       </td>
                       <td className="py-4 pr-2 text-right">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {(doc.analysis_status === 'failed' || doc.analysis_status === 'analyzing') && (
+                            <button 
+                              onClick={() => handleResume(doc.id)}
+                              className="p-2 text-sys-muted hover:text-sys-warning transition-colors cursor-pointer"
+                              title="Resume Analysis"
+                            >
+                              <RotateCcw size={18} />
+                            </button>
+                          )}
                           <button 
                             onClick={() => handleViewDocument(doc)}
                             className="p-2 text-sys-muted hover:text-sys-primary transition-colors cursor-pointer"
@@ -592,5 +585,13 @@ export default function MissionControlPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function MissionControlPage() {
+  return (
+    <Suspense fallback={null}>
+      <MissionControlInner />
+    </Suspense>
   );
 }

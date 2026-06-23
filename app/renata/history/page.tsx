@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { History, Loader, ExternalLink, Trash2, AlertCircle } from 'lucide-react';
+import { History, Loader, ExternalLink, Trash2, AlertCircle, RotateCcw } from 'lucide-react';
 import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
 import { StatusBadge } from '@/components/renata/StatusBadge';
 
@@ -66,6 +66,15 @@ export default function HistoryPage() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {(doc.analysis_status === 'failed' || doc.analysis_status === 'analyzing') && (
+                        <button
+                          onClick={() => router.push(`/renata/mission-control?resume=${doc.id}`)}
+                          className="p-2 text-sys-muted hover:text-sys-warning transition-colors cursor-pointer"
+                          title="Resume Analysis"
+                        >
+                          <RotateCcw size={18} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleView(doc)}
                         className="p-2 text-sys-muted hover:text-sys-primary transition-colors cursor-pointer"

@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import {
   ClipboardList, Network, HelpCircle, Lightbulb, Cpu, Shield, TrendingUp,
   ArrowUpCircle, CheckCircle, AlertTriangle,
-  ExternalLink, BookOpen, Map, MessageSquare, FileText, Share, Zap,
+  ExternalLink, BookOpen, Map, MessageSquare, FileText, Share, Zap, RotateCcw,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
+import { calculateAnalysisProgress } from '@/lib/brd/progress';
 import { SectionHeader } from '@/components/renata/SectionHeader';
 import { ExpandableCard } from '@/components/renata/ExpandableCard';
 import { FlowStepper } from '@/components/renata/FlowStepper';
@@ -380,6 +381,29 @@ export default function ResultsPage() {
                     <li><span className="text-sys-faint">Sections completed:</span> <span className="text-sys-text">{activeDocument?.sections_completed?.join(', ') || 'None'}</span></li>
                     <li><span className="text-sys-faint">Created:</span> <span className="text-sys-text">{new Date(activeDocument?.created_at || '').toLocaleString()}</span></li>
                   </ul>
+                  {activeDocument?.analysis_status !== 'completed' && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-xs font-geist mb-1">
+                        <span className="text-sys-muted">Progress</span>
+                        <span className="text-sys-text font-semibold">
+                          {calculateAnalysisProgress(activeDocument?.sections_completed || [], activeDocument?.analysis_status || '')}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-sys-border rounded-full h-1.5 mb-3">
+                        <div
+                          className="bg-sys-primary h-1.5 rounded-full transition-all"
+                          style={{ width: `${calculateAnalysisProgress(activeDocument?.sections_completed || [], activeDocument?.analysis_status || '')}%` }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => router.push(`/renata/mission-control?resume=${activeDocument?.id}`)}
+                        className="flex items-center gap-1.5 text-sys-primary text-xs font-geist font-semibold hover:underline cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        Continue Analysis
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

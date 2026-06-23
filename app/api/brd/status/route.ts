@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import {
+  calculateAnalysisProgress,
+  getAnalysisStatusMessage,
+} from '@/lib/brd/progress';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +61,8 @@ export async function GET(request: NextRequest) {
       sections_completed: doc.sections_completed || [],
       created_at: doc.created_at,
       updated_at: doc.updated_at,
-      progress: calculateProgress(doc.sections_completed || [], doc.analysis_status),
-      message: getStatusMessage(doc.analysis_status, doc.sections_completed || [])
+      progress: calculateAnalysisProgress(doc.sections_completed || [], doc.analysis_status),
+      message: getAnalysisStatusMessage(doc.analysis_status, doc.sections_completed || [])
     });
   } catch (error) {
     console.error('BRD status error:', error);
@@ -68,83 +72,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-/**
- * Calculate progress percentage based on completed sections
- */
-function calculateProgress(sectionsCompleted: string[], analysisStatus: string): number {
-  // Define the main analysis phases
-  const phases = [
-    'extraction',      // Extraction phase
-    'features',        // Core features
-    'flow_process',    // Core flow process
-    'improvements',    // Advisory improvements
-    'questions',       // Advisory questions
-    'risk_analysis',   // Advisory risk analysis
-    'context_diagram', // Advisory context diagram
-    'impacted_components', // Advisory impacted components
-    'use_case_scenarios',  // Advisory use case scenarios
-    'discovery_questions',    // Enrichment discovery
-    'optimization_suggestions', // Enrichment optimization
-    'solution_mapping'   // Enrichment solutions
-  ];
-
-  // Calculate based on required sections
-  const requiredPhases = [
-    'extraction',
-    'features', 
-    'flow_process',
-    'improvements',
-    'questions',
-    'risk_analysis',
-    'context_diagram',
-    'impacted_components',
-    'use_case_scenarios',
-    'discovery_questions',
-    'optimization_suggestions',
-    'solution_mapping'
-  ];
-
-  if (analysisStatus === 'completed') {
-    return 100;
-  }
-
-  if (analysisStatus === 'failed') {
-    return 0;
-  }
-
-  const completedRequired = requiredPhases.filter(phase => sectionsCompleted.includes(phase)).length;
-  const totalRequired = requiredPhases.length;
-  
-  return Math.round((completedRequired / totalRequired) * 100);
-}
-
-/**
- * Generate a human-readable status message
- */
-function getStatusMessage(analysisStatus: string, sectionsCompleted: string[]): string {
-  if (analysisStatus === 'failed') {
-    return 'Analysis failed';
-  }
-  
-  if (analysisStatus === 'completed') {
-    return 'Analysis completed';
-  }
-
-  // Determine current phase based on completed sections
-  if (sectionsCompleted.includes('extraction')) {
-    if (sectionsCompleted.includes('features') && sectionsCompleted.includes('flow_process')) {
-      if (sectionsCompleted.includes('improvements') && sectionsCompleted.includes('questions')) {
-        if (sectionsCompleted.includes('discovery_questions')) {
-          return 'Processing enrichment analysis';
-        }
-        return 'Processing advisory analysis';
-      }
-      return 'Processing advisory analysis';
-    }
-    return 'Processing core analysis';
-  }
-
-  return 'Initializing analysis';
 }

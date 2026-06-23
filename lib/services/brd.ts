@@ -37,6 +37,23 @@ export async function getBrdDocuments(): Promise<BrdDocument[]> {
 }
 
 /**
+ * Fetch a single BRD document by ID.
+ */
+export async function getBrdDocumentById(documentId: string): Promise<BrdDocument> {
+  const { data, error } = await supabase
+    .from('brd_documents')
+    .select('*')
+    .eq('id', documentId)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to fetch BRD document: ${error.message}`);
+  }
+
+  return data as BrdDocument;
+}
+
+/**
  * Fetch all features for a specific BRD document.
  */
 export async function getBrdFeatures(documentId: string): Promise<BrdFeature[]> {
