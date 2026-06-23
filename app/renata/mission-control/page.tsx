@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Brain, Upload, Play, CloudUpload, AlertCircle, FileText,
   Bell, Settings, ArrowRight, Loader, ExternalLink, Trash2,
-  Square, RotateCcw,
+  Square, RotateCcw, RefreshCw, CheckCircle,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { parsePdfWithSplit } from '@/lib/client/pdf';
@@ -212,6 +212,24 @@ function MissionControlInner() {
     }
   }, []);
 
+  // Manual refresh/retry - updates status and resets idle timer
+  const handleRefresh = useCallback(async () => {
+    const docId = activeDocumentIdRef.current;
+    if (!docId || !isAnalyzing) return;
+    
+    lastDataRef.current = Date.now();
+    try {
+      const res = await fetch(`/api/brd/status?documentId=${docId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStatusText(`Progress: ${data.message} (${data.progress}%)`);
+        console.log('Status refreshed:', data);
+      }
+    } catch (e) {
+      console.warn('Status refresh failed:', e);
+    }
+  }, [isAnalyzing]);
+
   const handleSubmit = async () => {
     if (!hasInput || isAnalyzing) return;
 
@@ -374,7 +392,16 @@ function MissionControlInner() {
           )}
 
           {isAnalyzing && (
-            <div className="flex justify-center mt-6">
+            <div className="flex justify-center mt-6 gap-3">
+              <button
+                onClick={handleRefresh}
+                disabled={!isAnalyzing}
+                className="px-5 py-2 bg-sys-primary/10 border border-sys-primary/30 text-sys-primary rounded-xl font-geist text-sm font-medium hover:bg-sys-primary/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Check Status / Keep Alive"
+              >
+                <RefreshCw size={14} />
+                Check Status
+              </button>
               <button
                 onClick={handleStop}
                 className="px-5 py-2 bg-sys-error/10 border border-sys-error/30 text-sys-error rounded-xl font-geist text-sm font-medium hover:bg-sys-error/20 transition-all flex items-center gap-2 cursor-pointer"

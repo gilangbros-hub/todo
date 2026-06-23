@@ -29,22 +29,30 @@ async function pollUntilComplete(
   signal: AbortSignal,
   onStatus: (s: string) => void,
   onActivity?: () => void,
-  timeoutMs = 240_000,
+  timeoutMs = 360_000, // 6 minutes max wait for slow LLM calls
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  
   while (Date.now() < deadline) {
+    // Always call onActivity FIRST to keep idle timer fresh
+    onActivity?.();
+    
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    await new Promise((r) => setTimeout(r, 4_000));
+    await new Promise((r) => setTimeout(r, 3_000));
+    
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     
-    // Reset idle timer since we are actively polling and alive
-    onActivity?.();
-
-    const status = await getStatus(documentId);
-    if (!status) continue;
-    onStatus(`Progress: ${status.message} (${status.progress}%)`);
-    if (status.analysis_status === 'failed') throw new Error('Analysis failed on server');
-    if (requiredSections.every((s) => status.sections_completed.includes(s))) return;
+    try {
+      const status = await getStatus(documentId);
+      if (status) {
+        onStatus(`Progress: ${status.message} (${status.progress}%)`);
+        if (status.analysis_status === 'failed') throw new Error('Analysis failed on server');
+        if (requiredSections.every((s) => status.sections_completed.includes(s))) return;
+      }
+    } catch (e) {
+      console.warn('Status poll error:', e);
+      // Continue polling even if one check fails
+    }
   }
   throw new Error('Timed out waiting for section to complete');
 }
@@ -68,22 +76,31 @@ export async function runBrdAnalysisPipeline(
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (data.status === 'cached' || data.status === 'completed' || data.status === 'skipped' || data.status === 'extracted') return;
+        if (data.status === 'cached' || data.status === 'completed' || data.status === 'skipped' || data.status === 'extracted') {
+          onActivity?.();
+          return;
+        }
       }
       fetchFailed = true;
     } catch (err) {
+      // Check abort FIRST before treating as fetch failure
       if (signal.aborted) throw err;
       fetchFailed = true;
     }
 
     if (fetchFailed) {
-      onStatus('Checking if server completed the step...');
+      onStatus('Connection timed out — server may still be working. Retrying in background...');
       await pollUntilComplete(documentId, requiredSections, signal, onStatus, onActivity);
+      // After polling succeeds, call onActivity one more time
+      onActivity?.();
     }
   };
 
   const status = await getStatus(documentId);
-  if (status) onStatus(`Progress: ${status.message} (${status.progress}%)`);
+  if (status) {
+    onStatus(`Progress: ${status.message} (${status.progress}%)`);
+    onActivity?.();
+  }
 
   onStatus('Performing extraction...');
   await post('/api/brd/extract', ['extraction']);
