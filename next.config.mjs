@@ -119,8 +119,20 @@ const nextConfig = {
 
     return [
       {
-        source: '/api/brd/:path*',
-        destination: `${railwayUrl}/api/brd/:path*`,
+        source: '/api/brd/extract',
+        destination: `${railwayUrl}/api/brd/extract`,
+      },
+      {
+        source: '/api/brd/core',
+        destination: `${railwayUrl}/api/brd/core`,
+      },
+      {
+        source: '/api/brd/advisory',
+        destination: `${railwayUrl}/api/brd/advisory`,
+      },
+      {
+        source: '/api/brd/enrich',
+        destination: `${railwayUrl}/api/brd/enrich`,
       },
     ];
   },
