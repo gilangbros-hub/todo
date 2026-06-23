@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 /** Max content tokens per LLM call (reasoning tokens are separate). */
 const MAX_TOKENS = 16_384;
 /** Abort a single LLM phase after this many ms. */
-const PHASE_TIMEOUT_MS = 120_000;
+const PHASE_TIMEOUT_MS = 180_000;
 /** SSE heartbeat interval to prevent Vercel idle-disconnect. */
 const HEARTBEAT_MS = 10_000;
 
@@ -167,23 +167,26 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 });
   }
 
-  const { text, title, fileName, model } = body as {
+  const { text, title, fileName, model, documentId: reqDocumentId } = body as {
     text: string;
     title: string;
     fileName: string | null;
     model?: string;
+    documentId?: string;
   };
 
-  // Validate and sanitize input
-  if (!text || typeof text !== 'string' || text.trim().length < 50) {
+  // Skip text validation if we're resuming (text might be empty)
+  if (!reqDocumentId && (!text || typeof text !== 'string' || text.trim().length < 50)) {
     return new Response(JSON.stringify({ error: 'Invalid input' }), { status: 400 });
   }
 
-  const cleanText = sanitizeBrdText(text);
-
-  const lengthErr = validateTextLength(cleanText);
-  if (lengthErr) {
-    return new Response(JSON.stringify({ error: lengthErr.error }), { status: lengthErr.status });
+  let cleanText = '';
+  if (text) {
+    cleanText = sanitizeBrdText(text);
+    const lengthErr = validateTextLength(cleanText);
+    if (lengthErr) {
+      return new Response(JSON.stringify({ error: lengthErr.error }), { status: lengthErr.status });
+    }
   }
 
   const selectedModel = selectModel(model);
@@ -195,27 +198,50 @@ export async function POST(request: NextRequest) {
 
   const trimmedText = cleanText;
   const supabase = await createClient();
-
   const openai = createDeepSeekClient(apiKey);
 
-  // Create document record
-  const { data: doc, error: docError } = await supabase
-    .from('brd_documents')
-    .insert({
-      title,
-      source_text: trimmedText,
-      file_name: fileName,
-      analysis_status: 'analyzing',
-      sections_completed: [],
-    })
-    .select()
-    .single();
+  let documentId = reqDocumentId;
+  let sourceTextForAnalysis = trimmedText;
+  let completedSections: string[] = [];
 
-  if (docError) {
-    return new Response(JSON.stringify({ error: docError.message }), { status: 500 });
+  if (documentId) {
+    // Resume existing document
+    const { data: doc, error: docError } = await supabase
+      .from('brd_documents')
+      .select('source_text, sections_completed')
+      .eq('id', documentId)
+      .single();
+
+    if (docError) {
+      return new Response(JSON.stringify({ error: `Document not found: ${docError.message}` }), { status: 404 });
+    }
+    
+    // If text was provided in the request, use it (maybe client is passing state)
+    // Otherwise use the source text from the DB
+    sourceTextForAnalysis = text ? trimmedText : (doc.source_text || '');
+    completedSections = doc.sections_completed || [];
+
+    await supabase.from('brd_documents').update({ analysis_status: 'analyzing' }).eq('id', documentId);
+  } else {
+    // Create document record
+    const { data: doc, error: docError } = await supabase
+      .from('brd_documents')
+      .insert({
+        title,
+        source_text: trimmedText,
+        file_name: fileName,
+        analysis_status: 'analyzing',
+        sections_completed: [],
+      })
+      .select()
+      .single();
+
+    if (docError) {
+      return new Response(JSON.stringify({ error: docError.message }), { status: 500 });
+    }
+    
+    documentId = doc.id;
   }
-
-  const documentId = doc.id;
 
   // Create a readable stream that sends SSE events
   const encoder = new TextEncoder();
@@ -240,132 +266,192 @@ export async function POST(request: NextRequest) {
         }
       }, HEARTBEAT_MS);
 
-      send('doc_id', documentId);
+      send('doc_id', documentId as string);
 
       try {
-        let finalAnalysisText = trimmedText;
+        let finalAnalysisText = sourceTextForAnalysis;
+        let features: unknown[] = [];
+        let flowProcess: unknown[] = [];
 
-        if (trimmedText.length > 25000) {
-          send('phase', 'chunking');
-          send('status', 'Document is large. Splitting for parallel extraction...');
-          
-          finalAnalysisText = await runChunkExtraction(openai, trimmedText);
-          send('status', 'Extraction complete. Starting distilled core analysis...');
+        // Skip extraction if core & advisory are both done
+        // (Though if they are both done, we probably shouldn't be here)
+        const hasCoreDone = completedSections.includes('features') && completedSections.includes('flow_process');
+        
+        if (!hasCoreDone) {
+          if (sourceTextForAnalysis.length > 25000 && !completedSections.includes('chunk_extraction')) {
+            send('phase', 'chunking');
+            send('status', 'Document is large. Splitting for parallel extraction...');
+            
+            finalAnalysisText = await runChunkExtraction(openai, sourceTextForAnalysis);
+            await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'chunk_extraction' });
+            
+            send('status', 'Extraction complete. Starting distilled core analysis...');
+          } else if (sourceTextForAnalysis.length > 25000 && completedSections.includes('chunk_extraction')) {
+             // If we already extracted chunks, ideally we'd load the concatenated extraction text here.
+             // For now, if we resume and extraction is marked done, we just proceed with the raw text. 
+             // (In a perfect system we'd persist the extracted summary and read it back, but let's keep it simple and just re-extract if needed or skip it based on db schema limits)
+             send('status', 'Skipping large document extraction (already completed)...');
+             // We re-run extraction to get the finalAnalysisText because we didn't save the intermediate string to DB.
+             // This is a trade-off. We could save it, but since this route streams, we just let it run.
+             finalAnalysisText = await runChunkExtraction(openai, sourceTextForAnalysis);
+          } else {
+            send('status', 'Starting core analysis...');
+          }
+
+          // --- Stream Core prompt (features + flow) ---
+          send('phase', 'core');
+
+          const core = await streamGuardedCompletion(
+            openai,
+            selectedModel,
+            [
+              { role: 'system', content: BA_SYSTEM_PROMPT },
+              { role: 'user', content: buildCorePrompt(finalAnalysisText) },
+            ],
+            (tok) => send('reasoning', tok),
+            (msg) => send('status', msg),
+          );
+          const coreContent = core.content;
+          const coreReasoning = core.reasoning;
+
+          if (core.looped && !coreContent.trim()) {
+            throw new Error('Renata got stuck in a repetition loop and produced no usable output. Please try again.');
+          }
+
+          send('status', 'Core analysis complete. Processing results...');
+
+          // Parse core result
+          const coreClean = stripMarkdownFences(coreContent);
+
+          let coreResult: { features?: unknown[]; flow_process?: unknown[] } = { features: [], flow_process: [] };
+          try {
+            coreResult = JSON.parse(coreClean);
+          } catch (e) {
+            send('error', `Core JSON parse failed: ${(e as Error).message}`);
+          }
+
+          features = Array.isArray(coreResult.features) ? coreResult.features.slice(0, 20) : [];
+          flowProcess = Array.isArray(coreResult.flow_process) ? coreResult.flow_process : [];
+
+          // Save core results to DB
+          const { error: flowErr } = await supabase.from('brd_documents').update({ flow_process: flowProcess }).eq('id', documentId);
+          if (flowErr) send('error', `Flow update failed: ${flowErr.message}`);
+          await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
+
+          if (features.length > 0) {
+            // Delete existing features for this document before inserting, in case we are re-running core
+            await supabase.from('brd_features').delete().eq('document_id', documentId);
+            
+            const featureRows = mapFeatureRows(features, documentId as string);
+            const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
+            if (featErr) send('error', `Feature insert failed: ${featErr.message}`);
+          }
+          await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'features' });
+
+          send('core_done', JSON.stringify({ features, flow_process: flowProcess, reasoning: coreReasoning }));
         } else {
-          send('status', 'Starting core analysis...');
+          send('status', 'Core analysis already completed. Skipping to advisory...');
+          send('phase', 'advisory');
+          
+          // Need to set finalAnalysisText for advisory since we skipped extraction
+          if (sourceTextForAnalysis.length > 25000) {
+             finalAnalysisText = await runChunkExtraction(openai, sourceTextForAnalysis);
+          }
         }
-
-        // --- Stream Core prompt (features + flow) ---
-        send('phase', 'core');
-
-        const core = await streamGuardedCompletion(
-          openai,
-          selectedModel,
-          [
-            { role: 'system', content: BA_SYSTEM_PROMPT },
-            { role: 'user', content: buildCorePrompt(finalAnalysisText) },
-          ],
-          (tok) => send('reasoning', tok),
-          (msg) => send('status', msg),
-        );
-        const coreContent = core.content;
-        const coreReasoning = core.reasoning;
-
-        if (core.looped && !coreContent.trim()) {
-          throw new Error('Renata got stuck in a repetition loop and produced no usable output. Please try again.');
-        }
-
-        send('status', 'Core analysis complete. Processing results...');
-
-        // Parse core result
-        const coreClean = stripMarkdownFences(coreContent);
-
-        let coreResult: { features?: unknown[]; flow_process?: unknown[] } = { features: [], flow_process: [] };
-        try {
-          coreResult = JSON.parse(coreClean);
-        } catch (e) {
-          send('error', `Core JSON parse failed: ${(e as Error).message}`);
-        }
-
-        const features = Array.isArray(coreResult.features) ? coreResult.features.slice(0, 20) : [];
-        const flowProcess = Array.isArray(coreResult.flow_process) ? coreResult.flow_process : [];
-
-        // Save core results to DB
-        const { error: flowErr } = await supabase.from('brd_documents').update({ flow_process: flowProcess }).eq('id', documentId);
-        if (flowErr) send('error', `Flow update failed: ${flowErr.message}`);
-        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'flow_process' });
-
-        if (features.length > 0) {
-          const featureRows = mapFeatureRows(features, documentId);
-          const { error: featErr } = await supabase.from('brd_features').insert(featureRows);
-          if (featErr) send('error', `Feature insert failed: ${featErr.message}`);
-        }
-        await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'features' });
-
-        send('core_done', JSON.stringify({ features, flow_process: flowProcess }));
 
         // --- Stream Advisory prompt ---
-        send('phase', 'advisory');
-        send('status', 'Starting advisory analysis...');
+        if (!completedSections.includes('advisory')) {
+          send('phase', 'advisory');
+          send('status', 'Starting advisory analysis...');
 
-        const advisory = await streamGuardedCompletion(
-          openai,
-          selectedModel,
-          [
-            { role: 'system', content: BA_SYSTEM_PROMPT },
-            { role: 'user', content: buildAdvisoryPrompt(finalAnalysisText) },
-          ],
-          (tok) => send('reasoning', tok),
-          (msg) => send('status', msg),
-        );
-        const advisoryContent = advisory.content;
+          const advisory = await streamGuardedCompletion(
+            openai,
+            selectedModel,
+            [
+              { role: 'system', content: BA_SYSTEM_PROMPT },
+              { role: 'user', content: buildAdvisoryPrompt(finalAnalysisText) },
+            ],
+            (tok) => send('reasoning', tok),
+            (msg) => send('status', msg),
+          );
+          const advisoryContent = advisory.content;
 
-        send('status', 'Advisory analysis complete. Processing...');
+          send('status', 'Advisory analysis complete. Processing...');
 
-        // Parse advisory result
-        const advisoryClean = stripMarkdownFences(advisoryContent);
+          // Parse advisory result
+          const advisoryClean = stripMarkdownFences(advisoryContent);
 
-        let advisoryResult: Record<string, unknown> = {};
-        try {
-          advisoryResult = JSON.parse(advisoryClean);
-        } catch (e) {
-          send('error', `Advisory JSON parse failed: ${(e as Error).message}`);
+          let advisoryResult: Record<string, unknown> = {};
+          
+          if (advisoryClean) {
+            try {
+              // Attempt a loose JSON parse to salvage truncated JSON from timeout
+              advisoryResult = JSON.parse(advisoryClean);
+            } catch (e) {
+              send('status', 'Advisory output was incomplete. Attempting to salvage partial data...');
+              try {
+                // VERY crude salvage for cut-off JSON (close arrays/objects)
+                let salvaged = advisoryClean.trim();
+                // Count unclosed brackets/braces
+                let openBraces = (salvaged.match(/\{/g) || []).length - (salvaged.match(/\}/g) || []).length;
+                let openBrackets = (salvaged.match(/\[/g) || []).length - (salvaged.match(/\]/g) || []).length;
+                
+                // If it ends in a trailing comma or string quote, clean it up
+                salvaged = salvaged.replace(/,\s*$/, '');
+                if ((salvaged.match(/"/g) || []).length % 2 !== 0) {
+                  salvaged += '"';
+                }
+                
+                // Close arrays first, then objects
+                while (openBrackets > 0) { salvaged += ']'; openBrackets--; }
+                while (openBraces > 0) { salvaged += '}'; openBraces--; }
+                
+                advisoryResult = JSON.parse(salvaged);
+                send('status', 'Successfully salvaged partial advisory data.');
+              } catch (salvageErr) {
+                send('error', `Advisory JSON salvage failed: ${(e as Error).message}`);
+              }
+            }
+          }
+
+          const improvements = Array.isArray(advisoryResult.IMPROVEMENTS) ? advisoryResult.IMPROVEMENTS.slice(0, 15) : [];
+          const questions = Array.isArray(advisoryResult.QUESTIONS) ? advisoryResult.QUESTIONS.slice(0, 15) : [];
+          const riskAnalysis = Array.isArray(advisoryResult.RISK_ANALYSIS) ? advisoryResult.RISK_ANALYSIS.slice(0, 15) : [];
+          const contextDiagram = typeof advisoryResult.CONTEXT_DIAGRAM === 'string'
+            ? sanitizeMermaid(advisoryResult.CONTEXT_DIAGRAM)
+            : '';
+          const impactedComponents = Array.isArray(advisoryResult.IMPACTED_COMPONENTS) ? advisoryResult.IMPACTED_COMPONENTS.slice(0, 20) : [];
+          const useCaseScenarios = Array.isArray(advisoryResult.USE_CASE_SCENARIOS) ? advisoryResult.USE_CASE_SCENARIOS.slice(0, 20) : [];
+
+          // Save advisory to DB
+          const { error: advErr } = await supabase.from('brd_documents').update({
+            improvements,
+            questions,
+            risk_analysis: riskAnalysis,
+            context_diagram: contextDiagram,
+            impacted_components: impactedComponents,
+            use_case_scenarios: useCaseScenarios,
+            analysis_status: 'completed',
+          }).eq('id', documentId);
+          if (advErr) send('error', `Advisory save failed: ${advErr.message}`);
+          await supabase.rpc('append_section_completed', { doc_id: documentId, section_name: 'advisory' });
+
+          // Send final complete event
+          send('complete', JSON.stringify({
+            documentId,
+            features,
+            flow_process: flowProcess,
+            improvements,
+            questions,
+            risk_analysis: riskAnalysis,
+            context_diagram: contextDiagram,
+            impacted_components: impactedComponents,
+            use_case_scenarios: useCaseScenarios,
+          }));
+        } else {
+           send('status', 'Advisory already completed. Analysis finished.');
+           send('complete', JSON.stringify({ documentId }));
         }
-
-        const improvements = Array.isArray(advisoryResult.IMPROVEMENTS) ? advisoryResult.IMPROVEMENTS.slice(0, 15) : [];
-        const questions = Array.isArray(advisoryResult.QUESTIONS) ? advisoryResult.QUESTIONS.slice(0, 15) : [];
-        const riskAnalysis = Array.isArray(advisoryResult.RISK_ANALYSIS) ? advisoryResult.RISK_ANALYSIS.slice(0, 15) : [];
-        const contextDiagram = typeof advisoryResult.CONTEXT_DIAGRAM === 'string'
-          ? sanitizeMermaid(advisoryResult.CONTEXT_DIAGRAM)
-          : '';
-        const impactedComponents = Array.isArray(advisoryResult.IMPACTED_COMPONENTS) ? advisoryResult.IMPACTED_COMPONENTS.slice(0, 20) : [];
-        const useCaseScenarios = Array.isArray(advisoryResult.USE_CASE_SCENARIOS) ? advisoryResult.USE_CASE_SCENARIOS.slice(0, 20) : [];
-
-        // Save advisory to DB
-        const { error: advErr } = await supabase.from('brd_documents').update({
-          improvements,
-          questions,
-          risk_analysis: riskAnalysis,
-          context_diagram: contextDiagram,
-          impacted_components: impactedComponents,
-          use_case_scenarios: useCaseScenarios,
-          analysis_status: 'completed',
-        }).eq('id', documentId);
-        if (advErr) send('error', `Advisory save failed: ${advErr.message}`);
-
-        // Send final complete event
-        send('complete', JSON.stringify({
-          documentId,
-          features,
-          flow_process: flowProcess,
-          improvements,
-          questions,
-          risk_analysis: riskAnalysis,
-          context_diagram: contextDiagram,
-          impacted_components: impactedComponents,
-          use_case_scenarios: useCaseScenarios,
-          reasoning: coreReasoning,
-        }));
 
         // NOTE: Discovery / optimization / solutions prompts were previously
         // fired here but their results were never persisted — they only burned

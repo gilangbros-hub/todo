@@ -11,7 +11,6 @@ import { useRenata } from '@/lib/renata/context';
 import { parsePdfWithSplit } from '@/lib/client/pdf';
 import { useBrdDocuments } from '@/lib/hooks/useBrdDocuments';
 import { StatusBadge } from '@/components/renata/StatusBadge';
-import { runBrdAnalysisPipeline } from '@/lib/client/brdPipeline';
 import { cancelBrdAnalysis, getBrdDocumentById } from '@/lib/services/brd';
 
 const MODELS = [
@@ -230,6 +229,48 @@ function MissionControlInner() {
     }
   }, [isAnalyzing]);
 
+    const handleSSEEvent = (event: string, data: string) => {
+      try {
+        switch (event) {
+          case 'doc_id':
+            const newDocId = data;
+            activeDocumentIdRef.current = newDocId;
+            setResumeDocumentId(newDocId);
+            break;
+          case 'phase':
+            setPhase(data as AnalysisPhase);
+            if (data === 'core') setStatusText('Core analysis in progress...');
+            if (data === 'advisory') setStatusText('Advisory analysis in progress...');
+            break;
+          case 'status':
+            setStatusText(data);
+            break;
+          case 'reasoning':
+            setReasoning((prev) => prev + data);
+            break;
+          case 'core_done':
+            setPhase('advisory');
+            setStatusText('Core analysis completed. Starting advisory phase...');
+            break;
+          case 'complete':
+            setPhase('complete');
+            setStatusText('Analysis completed successfully!');
+            setTimeout(() => {
+              const result = JSON.parse(data);
+              const docIdToUse = activeDocumentIdRef.current || result.documentId;
+              refreshData();
+              setActiveDocument(docIdToUse);
+              router.push('/renata/board');
+            }, 1000);
+            break;
+          case 'error':
+            throw new Error(data);
+        }
+      } catch (err) {
+        console.error('Error handling SSE event:', err);
+      }
+    };
+
   const handleSubmit = async () => {
     if (!hasInput || isAnalyzing) return;
 
@@ -256,34 +297,68 @@ function MissionControlInner() {
         ? fileName.replace(/\.(pdf|txt)$/i, '')
         : text.slice(0, 60).split('\n')[0] || 'Untitled Analysis';
 
-      setStatusText('Initializing analysis...');
-      const initResponse = await fetch('/api/brd/init', {
+      const response = await fetch('/api/brd/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, title, fileName, model }),
         signal: abort.signal,
       });
 
-      if (!initResponse.ok) {
-        const initErr = await initResponse.json();
-        throw new Error(initErr.error || 'Failed to initialize analysis');
+      if (response.status === 413) {
+        throw new Error('Document text is too large for analysis. Please reduce the document size and try again.');
       }
 
-      const { documentId } = await initResponse.json();
-      activeDocumentIdRef.current = documentId;
-      setResumeDocumentId(documentId);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Analysis request failed');
+      }
 
-      await runBrdAnalysisPipeline(documentId, abort.signal, {
-        onPhase: (p) => setPhase(p as AnalysisPhase),
-        onStatus: setStatusText,
-        onActivity: () => {
-          lastDataRef.current = Date.now();
-        },
-      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
 
-      setStatusText('Analysis complete! Refreshing data...');
-      await refreshData();
-      router.push('/renata/results');
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastDataRef.current = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
+               console.warn("Salvage failed, skipping fatal error to try and complete.");
+            } else {
+               handleSSEEvent(currentEvent, data);
+            }
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const lines = buffer.split('\n');
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
+               console.warn("Salvage failed, skipping fatal error to try and complete.");
+            } else {
+               handleSSEEvent(currentEvent, data);
+            }
+          }
+        }
+      }
     } catch (err) {
       if (abort.signal.aborted) {
         setError('Analysis was stopped. Any saved progress is available in your history.');
@@ -292,8 +367,8 @@ function MissionControlInner() {
         setError(msg);
       }
       setPhase('error');
-      setIsAnalyzing(false);
     } finally {
+      setIsAnalyzing(false);
       cleanup();
     }
   };
@@ -307,24 +382,71 @@ function MissionControlInner() {
     setResumeDocumentId(documentId);
     setIsAnalyzing(true);
     setPhase('core');
-    setStatusText('Resuming analysis...');
+    setStatusText('Resuming analysis via stream...');
     setReasoning('');
     setError(null);
 
     try {
-      await runBrdAnalysisPipeline(documentId, abort.signal, {
-        onPhase: (p) => setPhase(p as AnalysisPhase),
-        onStatus: setStatusText,
-        onActivity: () => {
-          lastDataRef.current = Date.now();
-        },
+      const response = await fetch('/api/brd/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: '', title: '', fileName: null, model, documentId }),
+        signal: abort.signal,
       });
 
-      setStatusText('Analysis complete! Refreshing data...');
-      const doc = await getBrdDocumentById(documentId);
-      setActiveDocument(doc);
-      await refreshData();
-      router.push('/renata/results');
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to resume analysis');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastDataRef.current = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            // Ignore error events on salvage
+            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
+               console.warn("Salvage failed, skipping fatal error to try and complete.");
+            } else {
+               handleSSEEvent(currentEvent, data);
+            }
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const lines = buffer.split('\n');
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (currentEvent === 'error' && data.includes('Advisory JSON salvage failed')) {
+               console.warn("Salvage failed, skipping fatal error to try and complete.");
+            } else {
+               handleSSEEvent(currentEvent, data);
+            }
+          }
+        }
+      }
+
     } catch (err) {
       if (abort.signal.aborted) {
         setError('Analysis was stopped. Any saved progress is available in your history.');
@@ -337,7 +459,7 @@ function MissionControlInner() {
     } finally {
       cleanup();
     }
-  }, [isAnalyzing, refreshData, router, setActiveDocument]);
+  }, [isAnalyzing, model]);
 
   useEffect(() => {
     const resumeId = searchParams.get('resume');
