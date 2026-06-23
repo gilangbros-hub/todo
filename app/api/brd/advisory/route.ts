@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
 import { sanitizeMermaid } from '@/lib/brd/mermaid';
 
+export const maxDuration = 300;
+
 /**
  * Perform advisory BRD analysis - generate improvements, questions, risks, etc.
  * Updates the document with advisory analysis results.

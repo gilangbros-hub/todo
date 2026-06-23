@@ -3,6 +3,8 @@ import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 
+export const maxDuration = 300;
+
 /**
  * Perform core BRD analysis - extract features and flow process.
  * Updates the document with features (saved to brd_features table) and flow_process.

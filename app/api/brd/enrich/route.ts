@@ -5,6 +5,8 @@ import { buildDiscoveryPrompt } from '@/lib/brd/prompts/discovery';
 import { buildOptimizationPrompt } from '@/lib/brd/prompts/optimization';
 import { buildSolutionsPrompt } from '@/lib/brd/prompts/solutions';
 
+export const maxDuration = 300;
+
 /**
  * Perform enrichment analysis - discovery questions, optimizations, and solutions mapping.
  * Completes the analysis process by updating the final status.

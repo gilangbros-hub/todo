@@ -5,7 +5,7 @@ import { buildExtractionPrompt } from '@/lib/brd/prompts/extract';
 import { chunkText } from '@/lib/brd/chunking';
 import { sanitizeImageReferences } from '@/lib/brd/sanitize';
 
-const MAX_EXTRACTION_TIME = 300; // 5 minutes max for extraction
+export const maxDuration = 300;
 
 /**
  * Perform map-reduce chunking/extraction phase on a BRD document.
