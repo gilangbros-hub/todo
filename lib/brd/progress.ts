@@ -1,16 +1,8 @@
 export const REQUIRED_PIPELINE_SECTIONS = [
-  'extraction',
+  'chunk_extraction',
   'features',
   'flow_process',
-  'improvements',
-  'questions',
-  'risk_analysis',
-  'context_diagram',
-  'impacted_components',
-  'use_case_scenarios',
-  'discovery_questions',
-  'optimization_suggestions',
-  'solution_mapping',
+  'advisory',
 ] as const;
 
 export function calculateAnalysisProgress(
@@ -33,20 +25,11 @@ export function getAnalysisStatusMessage(
   if (analysisStatus === 'failed') return 'Analysis failed';
   if (analysisStatus === 'completed') return 'Analysis completed';
 
-  if (sectionsCompleted.includes('extraction')) {
+  if (sectionsCompleted.includes('chunk_extraction')) {
     if (
       sectionsCompleted.includes('features') &&
       sectionsCompleted.includes('flow_process')
     ) {
-      if (
-        sectionsCompleted.includes('improvements') &&
-        sectionsCompleted.includes('questions')
-      ) {
-        if (sectionsCompleted.includes('discovery_questions')) {
-          return 'Processing enrichment analysis';
-        }
-        return 'Processing advisory analysis';
-      }
       return 'Processing advisory analysis';
     }
     return 'Processing core analysis';

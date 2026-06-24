@@ -209,6 +209,11 @@ function MissionControlInner() {
     if (docId) {
       cancelBrdAnalysis(docId).catch(() => {});
     }
+    setIsAnalyzing(false);
+    setPhase('idle');
+    setStatusText('');
+    setReasoning('');
+    setError('Analysis was stopped. Any saved progress is available in your history.');
   }, []);
 
   // Manual refresh/retry - updates status and resets idle timer
@@ -260,7 +265,7 @@ function MissionControlInner() {
               const docIdToUse = activeDocumentIdRef.current || result.documentId;
               refreshData();
               setActiveDocument(docIdToUse);
-              router.push('/renata/board');
+              router.push('/renata/results');
             }, 1000);
             break;
           case 'error':
