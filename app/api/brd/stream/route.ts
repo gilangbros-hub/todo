@@ -6,7 +6,7 @@ import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
 import { RepetitionGuard } from '@/lib/brd/repetition';
 import { sanitizeMermaid } from '@/lib/brd/mermaid';
 import { sanitizeBrdText, validateTextLength, stripMarkdownFences } from '@/lib/brd/text';
-import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
+import { selectModel, getApiKeyForModel, createLLMClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
 import { mapFeatureRows } from '@/lib/brd/features';
 import { runChunkExtraction } from '@/lib/brd/pipeline';
 
@@ -189,14 +189,13 @@ export async function POST(request: NextRequest) {
 
   const selectedModel = selectModel(model);
 
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Missing DeepSeek API key' }), { status: 500 });
+  const openai = createLLMClient(model);
+  if (!openai) {
+    return new Response(JSON.stringify({ error: 'Missing API key for selected model' }), { status: 500 });
   }
 
   const trimmedText = cleanText;
   const supabase = await createClient();
-  const openai = createDeepSeekClient(apiKey);
 
   let documentId = reqDocumentId;
   let sourceTextForAnalysis = trimmedText;

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { buildCorePrompt } from '@/lib/brd/prompts/core';
 import { buildAdvisoryPrompt } from '@/lib/brd/prompts/advisory';
 import { sanitizeBrdText, validateBrdInput, validateTextLength, stripMarkdownFences } from '@/lib/brd/text';
-import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
+import { selectModel, createLLMClient, BA_SYSTEM_PROMPT } from '@/lib/brd/deepseek';
 import { mapFeatureRows } from '@/lib/brd/features';
 import { runChunkExtraction } from '@/lib/brd/pipeline';
 
@@ -47,13 +47,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: lengthErr.error }, { status: lengthErr.status });
     }
 
-    const apiKey = getDeepSeekApiKey();
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Renata is not configured. Missing DeepSeek API key.' }, { status: 500 });
+    const openai = createLLMClient(model);
+    if (!openai) {
+      return NextResponse.json({ error: 'Missing API key for selected model.' }, { status: 500 });
     }
 
     const supabase = await createClient();
-    const openai = createDeepSeekClient(apiKey);
 
     // Create document record with status 'analyzing'
     const { data: doc, error: docError } = await supabase

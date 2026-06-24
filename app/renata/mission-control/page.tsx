@@ -15,6 +15,10 @@ import { cancelBrdAnalysis, getBrdDocumentById } from '@/lib/services/brd';
 
 const MODELS = [
   { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: 'Comprehensive BRD analysis with gap identification, risk assessment, and enterprise-standard requirement extraction.' },
+  { id: 'ollama/qwen3.5', label: 'Qwen 3.5 (Ollama)', description: 'High-performance open model via Ollama Cloud with strong multilingual and reasoning capabilities.' },
+  { id: 'ollama/gemma4', label: 'Gemma 4 (Ollama)', description: 'Google frontier model for reasoning, agentic workflows, and multimodal understanding.' },
+  { id: 'ollama/deepseek-v4-pro', label: 'DeepSeek V4 Pro (Ollama)', description: 'DeepSeek V4 Pro served via Ollama Cloud infrastructure.' },
+  { id: 'ollama/glm-5.2', label: 'GLM 5.2 (Ollama)', description: 'Z.ai flagship model for long-horizon tasks and agentic engineering.' },
 ] as const;
 
 type AnalysisPhase = 'idle' | 'parsing' | 'core' | 'advisory' | 'complete' | 'error';
