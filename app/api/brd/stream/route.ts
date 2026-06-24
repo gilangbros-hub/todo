@@ -10,9 +10,7 @@ import { selectModel, getDeepSeekApiKey, createDeepSeekClient, BA_SYSTEM_PROMPT 
 import { mapFeatureRows } from '@/lib/brd/features';
 import { runChunkExtraction } from '@/lib/brd/pipeline';
 
-// Vercel Hobby tier caps at 60 s for the initial response; streaming
-// extends the lifetime as long as data keeps flowing.
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const runtime = 'nodejs';
 
 /** Max content tokens per LLM call (reasoning tokens are separate). */
@@ -135,13 +133,13 @@ async function streamGuardedCompletion(
       } else {
         return { content, reasoning, looped: true };
       }
-    } catch {
-      // Phase timed out or parent signal aborted — return whatever we have.
+    } catch (err) {
       if (timedOut || phaseAbort.signal.aborted) {
         onStatus(timedOut ? 'Phase timed out — returning available results...' : 'Analysis stopped.');
         return { content, reasoning, looped: false };
       }
-      throw new Error('LLM call failed');
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`LLM call failed: ${detail}`);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', propagateAbort);
