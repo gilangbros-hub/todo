@@ -27,8 +27,18 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user }, error } = await supabase.auth.getUser();
 
-  if (error) {
+  if (error || !user) {
     // Treat auth errors (expired token, network issue) as unauthenticated
+    return { user: null, supabaseResponse };
+  }
+
+  // Enforce 1-day (24 hour) session limit
+  const lastSignIn = new Date(user.last_sign_in_at || user.created_at).getTime();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  
+  if (Date.now() - lastSignIn > ONE_DAY_MS) {
+    // Session too old — clear it
+    await supabase.auth.signOut();
     return { user: null, supabaseResponse };
   }
 

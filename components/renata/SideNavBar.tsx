@@ -1,13 +1,15 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, History, Upload, HelpCircle, User, ChevronRight,
-  FileText, Eye, Menu,
+  Eye, Menu, LogOut
 } from 'lucide-react';
 import { CHAPTERS, ChapterSlug } from '@/lib/renata/types';
 import { useRenata } from '@/lib/renata/context';
+import { createClient } from '@/lib/supabase/client';
 
 const ICON_MAP: Record<string, any> = {
   mission_control: Upload,
@@ -33,10 +35,34 @@ interface SideNavBarProps {
 
 export function SideNavBar({ isOpen = false, onClose, collapsed = false }: SideNavBarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { activeDocument } = useRenata();
   const activeChapter = getChapterFromPathname(pathname);
   const hasDocument = !!activeDocument;
   const sidebarWidth = collapsed ? 'w-16' : 'w-60';
+
+  const [displayName, setDisplayName] = useState<string>('User');
+  const [email, setEmail] = useState<string>('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    async function loadUser() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setDisplayName(user.user_metadata?.display_name || 'User');
+        setEmail(user.email || '');
+      }
+    }
+    loadUser();
+  }, []);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   return (
     <>
@@ -125,10 +151,18 @@ export function SideNavBar({ isOpen = false, onClose, collapsed = false }: SideN
         {/* Profile */}
         <div className="mt-auto border-t border-sys-border">
           {collapsed ? (
-            <div className="flex justify-center py-4">
-              <div className="w-9 h-9 rounded-full bg-sys-bg border border-sys-border flex items-center justify-center">
+            <div className="flex flex-col gap-2 p-2 items-center">
+              <div className="w-9 h-9 rounded-full bg-sys-bg border border-sys-border flex items-center justify-center shrink-0 mb-1" title={displayName}>
                 <User size={18} className="text-sys-primary" />
               </div>
+              <button 
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                title="Logout"
+                className="w-9 h-9 flex items-center justify-center rounded-xl text-sys-error hover:bg-sys-error/10 transition-colors"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           ) : (
             <div className="p-4 flex flex-col gap-2">
@@ -136,14 +170,22 @@ export function SideNavBar({ isOpen = false, onClose, collapsed = false }: SideN
                 <HelpCircle size={16} className="text-sys-faint" />
                 Help Center
               </Link>
-              <div className="mt-1 flex items-center gap-3 px-3 py-2">
+              <div className="mt-1 flex items-center gap-3 px-3 py-2 group">
                 <div className="w-9 h-9 rounded-full bg-sys-bg border border-sys-border flex items-center justify-center shrink-0">
                   <User size={18} className="text-sys-primary" />
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="font-geist font-bold text-sm text-sys-text truncate">Muhammad Gilang</span>
-                  <span className="font-geist text-xs text-sys-muted truncate">IT Business Analyst</span>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-geist font-bold text-sm text-sys-text truncate">{displayName}</span>
+                  <span className="font-geist text-xs text-sys-muted truncate">{email}</span>
                 </div>
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="p-2 text-sys-error/70 hover:text-sys-error hover:bg-sys-error/10 rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Logout"
+                >
+                  <LogOut size={16} />
+                </button>
               </div>
             </div>
           )}
