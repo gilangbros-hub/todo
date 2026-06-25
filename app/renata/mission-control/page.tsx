@@ -633,14 +633,22 @@ function MissionControlInner() {
             <Brain size={20} className="text-sys-primary" />
             <h3 className="font-outfit text-lg font-medium text-sys-text">LLM Model</h3>
           </div>
-          <div className="flex-1 bg-sys-bg border border-sys-border rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-sys-success"></div>
-              <div>
-                <span className="font-geist text-sm font-semibold text-sys-text block">DeepSeek V4 Pro</span>
-                <span className="font-geist text-xs text-sys-muted leading-tight">Comprehensive BRD analysis with gap identification and enterprise standards.</span>
-              </div>
-            </div>
+          <div className="flex-1 flex flex-col gap-2 overflow-y-auto max-h-64">
+            {MODELS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setModel(m.id)}
+                className={`w-full text-left rounded-xl p-3 border transition-all cursor-pointer ${model === m.id ? 'bg-sys-primary/5 border-sys-primary' : 'bg-sys-bg border-sys-border hover:border-sys-primary/40'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${model === m.id ? 'bg-sys-success' : 'bg-sys-muted/30'}`} />
+                  <div className="min-w-0">
+                    <span className="font-geist text-sm font-semibold text-sys-text block">{m.label}</span>
+                    <span className="font-geist text-xs text-sys-muted leading-tight line-clamp-2">{m.description}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
