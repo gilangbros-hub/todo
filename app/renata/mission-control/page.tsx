@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/renata/StatusBadge';
 import { cancelBrdAnalysis, getBrdDocumentById } from '@/lib/services/brd';
 
 const MODELS = [
-  { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: 'Comprehensive BRD analysis with gap identification, risk assessment, and enterprise-standard requirement extraction.' },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: 'Strategic BRD review — challenges assumptions, surfaces team gaps, defines business risks, and assesses enablement readiness.' },
   { id: 'ollama/qwen3.5', label: 'Qwen 3.5 (Ollama)', description: 'High-performance open model via Ollama Cloud with strong multilingual and reasoning capabilities.' },
   { id: 'ollama/gemma4', label: 'Gemma 4 (Ollama)', description: 'Google frontier model for reasoning, agentic workflows, and multimodal understanding.' },
   { id: 'ollama/deepseek-v4-pro', label: 'DeepSeek V4 Pro (Ollama)', description: 'DeepSeek V4 Pro served via Ollama Cloud infrastructure.' },
@@ -485,7 +485,7 @@ function MissionControlInner() {
 
           <div className="text-center mb-6">
             <h2 className="font-outfit font-semibold text-sys-primary text-2xl tracking-tight mb-2">
-              Renata Processing
+              Renata is Reviewing
             </h2>
             <p className="text-sys-muted font-geist font-medium text-sm">
               {phaseLabel(phase)}

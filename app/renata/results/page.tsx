@@ -3,9 +3,10 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ClipboardList, Network, HelpCircle, Lightbulb, Cpu, Shield, TrendingUp,
-  ArrowUpCircle, CheckCircle, AlertTriangle,
+  ClipboardList, Network, HelpCircle, Lightbulb, Users, ShieldAlert, TrendingUp,
+  ArrowUpCircle, CheckCircle, AlertTriangle, Target,
   ExternalLink, BookOpen, Map, MessageSquare, FileText, Share, Zap, RotateCcw,
+  Clock, UserCheck, Activity,
 } from 'lucide-react';
 import { useRenata } from '@/lib/renata/context';
 import { calculateAnalysisProgress } from '@/lib/brd/progress';
@@ -15,20 +16,20 @@ import { FlowStepper } from '@/components/renata/FlowStepper';
 import { ArchitectureCanvas } from '@/components/renata/ArchitectureCanvas';
 import { IntegrationCard } from '@/components/renata/IntegrationCard';
 import {
-  MOCK_FEATURES, MOCK_DISCOVERY_QUESTIONS, MOCK_OPTIMIZATIONS,
-  MOCK_SOLUTIONS, MOCK_RISKS, MOCK_ADVISORY,
+  MOCK_FEATURES, MOCK_DISCOVERY_QUESTIONS, MOCK_IMPROVEMENTS,
+  MOCK_ENABLEMENT, MOCK_RISKS, MOCK_STRATEGIC_ALIGNMENT,
 } from '@/lib/renata/mock-data';
 
 type TabId = 'requirements' | 'process' | 'discovery' | 'optimization' | 'solutions' | 'deepdive' | 'extraction';
 
 const TABS: { id: TabId; label: string; icon: any; color: string }[] = [
   { id: 'requirements', label: 'Requirements Matrix', icon: ClipboardList, color: 'text-sys-primary' },
-  { id: 'process', label: 'Process & Architecture', icon: Network, color: 'text-sys-secondary' },
-  { id: 'discovery', label: 'Discovery Questions', icon: HelpCircle, color: 'text-indigo-500' },
-  { id: 'optimization', label: 'AI Optimization', icon: Lightbulb, color: 'text-purple-500' },
-  { id: 'solutions', label: 'AI Solutions', icon: Cpu, color: 'text-cyan-500' },
+  { id: 'process', label: 'Business Process & Context', icon: Network, color: 'text-sys-secondary' },
+  { id: 'discovery', label: 'Team Gap Questions', icon: MessageSquare, color: 'text-indigo-500' },
+  { id: 'optimization', label: 'Strategic Alignment', icon: Target, color: 'text-purple-500' },
+  { id: 'solutions', label: 'Enablement Strategy', icon: Users, color: 'text-cyan-500' },
   { id: 'extraction', label: 'Source & Extraction', icon: FileText, color: 'text-sys-info' },
-  { id: 'deepdive', label: 'BA Deep-Dive', icon: Shield, color: 'text-sys-warning' },
+  { id: 'deepdive', label: 'Risk & Impact Register', icon: ShieldAlert, color: 'text-sys-warning' },
 ];
 
 const PRIORITY_BADGES: Record<string, string> = {
@@ -66,8 +67,10 @@ export default function ResultsPage() {
   const [reqSubTab, setReqSubTab] = useState<'functional' | 'non-functional'>('functional');
 
   const discoveryQs = extras.questions.length > 0 ? extras.questions : MOCK_DISCOVERY_QUESTIONS;
-  const improvements = extras.improvements.length > 0 ? extras.improvements : MOCK_OPTIMIZATIONS;
+  const improvements = extras.improvements.length > 0 ? extras.improvements : MOCK_IMPROVEMENTS;
   const risks = extras.risk_analysis.length > 0 ? extras.risk_analysis : MOCK_RISKS;
+  const enablementRecs = extras.enablement_recs?.length > 0 ? extras.enablement_recs : MOCK_ENABLEMENT;
+  const strategicItems = extras.strategic_alignment?.length > 0 ? extras.strategic_alignment : MOCK_STRATEGIC_ALIGNMENT;
 
   const [expandedReq, setExpandedReq] = useState<string | null>(null);
 
@@ -181,7 +184,7 @@ export default function ResultsPage() {
 
         {activeTab === 'process' && (
           <>
-            <SectionHeader icon={Network} title="Process Flow & System Architecture" subtitle="Business process flow with corresponding system architecture diagram and integration points." />
+            <SectionHeader icon={Network} title="Business Process & Context" subtitle="End-to-end business flow that will change with this initiative, and the system context diagram for stakeholder alignment." />
 
             <div className="space-y-2 mb-8">
               <h3 className="font-outfit font-extrabold text-xl text-sys-text">Business Process Flow</h3>
@@ -222,29 +225,42 @@ export default function ResultsPage() {
 
         {activeTab === 'discovery' && (
           <>
-            <SectionHeader icon={HelpCircle} title="Discovery Questionnaire" subtitle="Targeted questions to gather missing requirements and clarify ambiguities with stakeholders." />
+            <SectionHeader icon={MessageSquare} title="Team Gap Questions" subtitle="Questions your team needs to answer before this BRD can be signed off. These expose missing analysis, unvalidated assumptions, and decisions that haven't been made yet." />
             <div className="space-y-3">
               {discoveryQs.map((q, i) => (
                 <ExpandableCard key={i}
-                  badge={<Badge className={`${q.priority === 'high' ? 'bg-red-100 text-red-700 border-red-200' : q.priority === 'medium' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-green-100 text-green-700 border-green-200'}`}>{q.priority}</Badge>}
+                  badge={
+                    <div className="flex gap-1.5">
+                      <Badge className={`${q.priority === 'high' ? 'bg-red-100 text-red-700 border-red-200' : q.priority === 'medium' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-green-100 text-green-700 border-green-200'}`}>{q.priority}</Badge>
+                      {(q as any).urgency && (
+                        <Badge className={`${ (q as any).urgency === 'ask_now' ? 'bg-red-100 text-red-700 border-red-200' : (q as any).urgency === 'ask_before_kickoff' ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                          {(q as any).urgency?.replace(/_/g, ' ')}
+                        </Badge>
+                      )}
+                    </div>
+                  }
                   expandedContent={
                     <div className="space-y-3 text-base">
                       <div className="bg-white border border-sys-border rounded-xl p-4">
-                        <p className="font-geist font-bold text-sm text-sys-muted uppercase tracking-wider mb-1">Context</p>
-                        <p className="font-geist text-sys-text">{q.context}</p>
+                        <p className="font-geist font-bold text-sm text-sys-muted uppercase tracking-wider mb-1">Why This Matters</p>
+                        <p className="font-geist text-sys-text leading-relaxed">{q.context}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="px-3 py-1 rounded-lg bg-sys-primary-container/20 text-sys-primary font-geist font-bold text-xs border border-sys-primary-container/30">{q.category?.replace(/_/g, ' ') || 'general'}</span>
-                        <span className="px-3 py-1 rounded-lg bg-sys-secondary/10 text-sys-secondary font-geist font-bold text-xs border border-sys-secondary/20">{q.target_stakeholder}</span>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="px-3 py-1 rounded-lg bg-indigo-100 text-indigo-700 font-geist font-bold text-xs border border-indigo-200">{q.category?.replace(/_/g, ' ')}</span>
+                        <span className="flex items-center gap-1 px-3 py-1 rounded-lg bg-sys-bg border border-sys-border font-geist text-xs text-sys-muted font-bold">
+                          <UserCheck size={12} /> {q.target_stakeholder}
+                        </span>
                       </div>
                     </div>
                   }
                 >
                   <div className="flex items-start gap-3">
-                    <MessageSquare size={18} className="text-sys-primary shrink-0 mt-0.5" />
+                    <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
+                      <HelpCircle size={16} className="text-indigo-600" />
+                    </div>
                     <div>
                       <p className="font-geist font-bold text-base text-sys-text">{q.question}</p>
-                      <p className="font-geist text-sm text-sys-muted mt-0.5">{q.category?.replace(/_/g, ' ') || 'General'} · {q.target_stakeholder}</p>
+                      <p className="font-geist text-sm text-sys-muted mt-0.5">{q.category?.replace(/_/g, ' ')} · {q.target_stakeholder}</p>
                     </div>
                   </div>
                 </ExpandableCard>
@@ -255,35 +271,43 @@ export default function ResultsPage() {
 
         {activeTab === 'optimization' && (
           <>
-            <SectionHeader icon={Lightbulb} title="AI Optimization Suggestions" subtitle="AI-driven recommendations to improve, clarify, and optimize requirements for better delivery outcomes." />
+            <SectionHeader icon={Target} title="Strategic Alignment" subtitle="Management-level assessment of whether this initiative is the right thing to do, at the right time, with the right scope and justification." />
             <div className="space-y-3">
-              {improvements.map((opt, i) => (
+              {strategicItems.map((item, i) => (
                 <ExpandableCard key={i} className="hover:border-purple-300"
-                  badge={<Badge className={PRIORITY_BADGES[opt.priority] || PRIORITY_BADGES.medium}>{opt.priority}</Badge>}
+                  badge={<Badge className={PRIORITY_BADGES[item.priority] || PRIORITY_BADGES.medium}>{item.priority}</Badge>}
                   expandedContent={
                     <div className="space-y-3 text-base">
-                      <p className="font-geist text-sys-text/90 leading-relaxed">{opt.description}</p>
-                      {(opt as any).impact && (
-                        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
-                          <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-indigo-700 uppercase tracking-wider mb-1">
-                            <TrendingUp size={14} /> Business Impact
+                      <p className="font-geist text-sys-text/90 leading-relaxed">{item.description}</p>
+                      {item.impact && (
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4">
+                          <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-amber-700 uppercase tracking-wider mb-1">
+                            <AlertTriangle size={14} /> Business Impact if Ignored
                           </p>
-                          <p className="font-geist text-indigo-800">{(opt as any).impact}</p>
+                          <p className="font-geist text-amber-800">{item.impact}</p>
+                        </div>
+                      )}
+                      {(item as any).recommended_action && (
+                        <div className="bg-gradient-to-r from-green-50 to-teal-50 border border-green-200 rounded-xl p-4">
+                          <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-green-700 uppercase tracking-wider mb-1">
+                            <CheckCircle size={14} /> Recommended Action
+                          </p>
+                          <p className="font-geist text-green-800">{(item as any).recommended_action}</p>
                         </div>
                       )}
                       <div className="flex gap-2">
-                        <span className="px-3 py-1 rounded-lg bg-purple-100 text-purple-700 font-geist font-bold text-xs border border-purple-200">{opt.category?.replace(/_/g, ' ') || 'general'}</span>
+                        <span className="px-3 py-1 rounded-lg bg-purple-100 text-purple-700 font-geist font-bold text-xs border border-purple-200">{item.category?.replace(/_/g, ' ') || 'general'}</span>
                       </div>
                     </div>
                   }
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
-                      <Zap size={16} className="text-purple-600" />
+                      <Target size={16} className="text-purple-600" />
                     </div>
                     <div>
-                      <p className="font-geist font-bold text-base text-sys-text">{opt.title}</p>
-                      <p className="font-geist text-sm text-sys-muted mt-0.5 line-clamp-1">{opt.description}</p>
+                      <p className="font-geist font-bold text-base text-sys-text">{item.title}</p>
+                      <p className="font-geist text-sm text-sys-muted mt-0.5 line-clamp-1">{item.description}</p>
                     </div>
                   </div>
                 </ExpandableCard>
@@ -294,45 +318,71 @@ export default function ResultsPage() {
 
         {activeTab === 'solutions' && (
           <>
-            <SectionHeader icon={Cpu} title="AI Technical Solutions" subtitle="Mapping specific AI and technical solutions to each requirement with recommended tech stacks." />
+            <SectionHeader icon={Users} title="Enablement Strategy" subtitle="Business readiness assessment for each requirement — who owns it, what changes for the business, and what needs to happen before this can deliver value." />
             <div className="space-y-3">
-              {MOCK_SOLUTIONS.map((sol, i) => (
+              {enablementRecs.map((item, i) => (
                 <ExpandableCard key={i} className="hover:border-cyan-300"
-                  badge={<Badge className={`${sol.complexity === 'high' ? 'bg-red-100 text-red-700 border-red-200' : sol.complexity === 'medium' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-green-100 text-green-700 border-green-200'}`}>{sol.complexity}</Badge>}
+                  badge={
+                    <Badge className={`${item.change_complexity === 'high' ? 'bg-red-100 text-red-700 border-red-200' : item.change_complexity === 'medium' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                      {item.change_complexity} complexity
+                    </Badge>
+                  }
                   expandedContent={
                     <div className="space-y-4 text-base">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-sys-bg border border-sys-border rounded-xl p-3">
+                          <p className="font-geist text-xs text-sys-muted uppercase tracking-wider font-bold mb-1">Business Owner</p>
+                          <p className="font-geist font-bold text-sys-text">{item.business_owner}</p>
+                        </div>
+                        <div className="bg-sys-bg border border-sys-border rounded-xl p-3">
+                          <p className="font-geist text-xs text-sys-muted uppercase tracking-wider font-bold mb-1">Readiness</p>
+                          <span className={`inline-flex items-center gap-1.5 font-geist font-bold text-sm ${item.readiness_assessment === 'ready' ? 'text-green-600' : item.readiness_assessment === 'partially_ready' ? 'text-amber-600' : 'text-red-600'}`}>
+                            <Activity size={14} />
+                            {item.readiness_assessment?.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                      </div>
                       <div className="bg-gradient-to-r from-cyan-50 to-teal-50 border border-cyan-200 rounded-xl p-4">
-                        <p className="font-geist font-bold text-sm text-cyan-700 uppercase tracking-wider mb-2">Solution Recommendation</p>
-                        <p className="font-geist text-cyan-900 leading-relaxed">{sol.recommendation}</p>
+                        <p className="font-geist font-bold text-sm text-cyan-700 uppercase tracking-wider mb-2">Change Impact for Business</p>
+                        <p className="font-geist text-cyan-900 leading-relaxed">{item.change_impact}</p>
                       </div>
-                      <div>
-                        <p className="font-geist font-bold text-sm text-sys-muted uppercase tracking-wider mb-2">Recommended Tech Stack</p>
-                        <div className="flex flex-wrap gap-2">
-                          {sol.tech_stack.map((t, ti) => (
-                            <span key={ti} className="px-3 py-1.5 rounded-lg bg-sys-bg border border-sys-border font-mono font-bold text-xs text-sys-text">{t}</span>
-                          ))}
+                      {item.readiness_notes && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <p className="font-geist font-bold text-sm text-amber-700 uppercase tracking-wider mb-1">Readiness Notes</p>
+                          <p className="font-geist text-amber-800">{item.readiness_notes}</p>
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-sys-bg border border-sys-border rounded-xl p-3">
-                          <p className="font-geist text-xs text-sys-muted uppercase tracking-wider font-bold">Complexity</p>
-                          <p className="font-geist font-bold text-sys-text mt-0.5 capitalize">{sol.complexity}</p>
+                      )}
+                      {item.enablement_actions?.length > 0 && (
+                        <div>
+                          <p className="font-geist font-bold text-sm text-sys-muted uppercase tracking-wider mb-2">Enablement Actions Required</p>
+                          <ul className="space-y-1.5">
+                            {item.enablement_actions.map((action, ai) => (
+                              <li key={ai} className="flex items-start gap-2 font-geist text-sys-text">
+                                <CheckCircle size={16} className="text-sys-success shrink-0 mt-0.5" />
+                                {action}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                        <div className="bg-sys-bg border border-sys-border rounded-xl p-3">
-                          <p className="font-geist text-xs text-sys-muted uppercase tracking-wider font-bold">Est. Effort</p>
-                          <p className="font-geist font-bold text-sys-text mt-0.5">{sol.estimated_effort}</p>
+                      )}
+                      {item.success_metric && (
+                        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                          <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-green-700 uppercase tracking-wider mb-1">
+                            <TrendingUp size={14} /> Success Metric
+                          </p>
+                          <p className="font-geist text-green-800">{item.success_metric}</p>
                         </div>
-                      </div>
+                      )}
                     </div>
                   }
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-9 h-9 rounded-xl bg-cyan-100 flex items-center justify-center shrink-0">
-                      <Cpu size={16} className="text-cyan-600" />
+                      <Users size={16} className="text-cyan-600" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-geist font-bold text-base text-sys-text">{sol.feature_name}</p>
-                      <p className="font-geist text-sm text-sys-muted">{sol.feature_id} · {sol.solution_type?.replace(/_/g, ' ')}</p>
+                      <p className="font-geist font-bold text-base text-sys-text">{item.feature_name}</p>
+                      <p className="font-geist text-sm text-sys-muted mt-0.5">{item.feature_id} · Owner: {item.business_owner}</p>
                     </div>
                   </div>
                 </ExpandableCard>
@@ -412,13 +462,13 @@ export default function ResultsPage() {
 
         {activeTab === 'deepdive' && (
           <>
-            <SectionHeader icon={Shield} title="BA Deep-Dive" subtitle="Separated Risk Analysis and Strategic Advisory for comprehensive project assessment." />
+            <SectionHeader icon={ShieldAlert} title="Risk & Impact Register" subtitle="Business risks that could derail this initiative, and document gaps your team needs to address before sign-off." />
             <div className="flex gap-2 mb-6">
               <button onClick={() => setDeepDiveSub('risk')} className={`px-5 py-2.5 rounded-xl font-geist font-bold text-sm transition-all cursor-pointer flex items-center gap-2 ${deepDiveSub === 'risk' ? 'bg-sys-error text-white shadow-sm' : 'bg-sys-surface text-sys-muted border border-sys-border hover:bg-sys-bg'}`}>
-                <AlertTriangle size={16} /> Risk Watchlist ({risks.length})
+                <AlertTriangle size={16} /> Business Risks ({risks.length})
               </button>
-              <button onClick={() => setDeepDiveSub('advisory')} className={`px-5 py-2.5 rounded-xl font-geist font-bold text-sm transition-all cursor-pointer flex items-center gap-2 ${deepDiveSub === 'advisory' ? 'bg-sys-success text-white shadow-sm' : 'bg-sys-surface text-sys-muted border border-sys-border hover:bg-sys-bg'}`}>
-                <TrendingUp size={16} /> Strategic Advisory ({MOCK_ADVISORY.length})
+              <button onClick={() => setDeepDiveSub('advisory')} className={`px-5 py-2.5 rounded-xl font-geist font-bold text-sm transition-all cursor-pointer flex items-center gap-2 ${deepDiveSub === 'advisory' ? 'bg-sys-warning text-white shadow-sm' : 'bg-sys-surface text-sys-muted border border-sys-border hover:bg-sys-bg'}`}>
+                <Zap size={16} /> Document Gaps ({improvements.length})
               </button>
             </div>
 
@@ -434,25 +484,35 @@ export default function ResultsPage() {
                     }
                     expandedContent={
                       <div className="space-y-4 text-base">
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                          <p className="font-geist font-bold text-sm text-red-700 uppercase tracking-wider mb-1">Mitigation Strategy</p>
-                          <p className="font-geist text-red-800">{risk.mitigation_strategy}</p>
-                        </div>
-                        {(risk as any).deep_dive && (
-                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                            <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-amber-700 uppercase tracking-wider mb-1">
-                              <ArrowUpCircle size={14} /> BA Deep-Dive Notes
+                        {(risk as any).business_impact && (
+                          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                            <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-red-700 uppercase tracking-wider mb-1">
+                              <AlertTriangle size={14} /> Business Impact
                             </p>
-                            <p className="font-geist text-amber-800 leading-relaxed">{(risk as any).deep_dive}</p>
+                            <p className="font-geist text-red-800">{(risk as any).business_impact}</p>
+                          </div>
+                        )}
+                        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                          <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-green-700 uppercase tracking-wider mb-1">
+                            <CheckCircle size={14} /> Mitigation Strategy
+                          </p>
+                          <p className="font-geist text-green-800">{risk.mitigation_strategy}</p>
+                        </div>
+                        {(risk as any).risk_owner && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sys-bg border border-sys-border">
+                            <UserCheck size={14} className="text-sys-muted" />
+                            <span className="font-geist text-sm text-sys-muted font-bold uppercase tracking-wider">Risk Owner:</span>
+                            <span className="font-geist text-sm text-sys-text font-bold">{(risk as any).risk_owner}</span>
                           </div>
                         )}
                       </div>
                     }
                   >
                     <div className="flex items-start gap-3">
-                      <AlertTriangle size={20} className="text-sys-error shrink-0 mt-0.5" />
+                      <ShieldAlert size={20} className="text-sys-error shrink-0 mt-0.5" />
                       <div>
                         <p className="font-geist font-bold text-base text-sys-text">{risk.risk_event}</p>
+                        <p className="font-geist text-sm text-sys-muted mt-0.5 line-clamp-1">{(risk as any).business_impact || risk.mitigation_strategy}</p>
                       </div>
                     </div>
                   </ExpandableCard>
@@ -460,29 +520,21 @@ export default function ResultsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {MOCK_ADVISORY.map((adv, i) => (
-                  <ExpandableCard key={i} className="border-l-4 border-l-sys-success hover:shadow-green-100/50"
-                    badge={<Badge className={PRIORITY_BADGES[adv.priority] || PRIORITY_BADGES.medium}>{adv.priority}</Badge>}
+                {improvements.map((gap, i) => (
+                  <ExpandableCard key={i} className="border-l-4 border-l-sys-warning hover:shadow-amber-100/50"
+                    badge={<Badge className={PRIORITY_BADGES[gap.priority] || PRIORITY_BADGES.medium}>{gap.priority}</Badge>}
                     expandedContent={
-                      <div className="space-y-4 text-base">
-                        <p className="font-geist text-sys-text/90 leading-relaxed">{adv.description}</p>
-                        {adv.impact && (
-                          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                            <p className="flex items-center gap-1.5 font-geist font-bold text-sm text-green-700 uppercase tracking-wider mb-1">
-                              <TrendingUp size={14} /> Expected Impact
-                            </p>
-                            <p className="font-geist text-green-800">{adv.impact}</p>
-                          </div>
-                        )}
-                        <span className="inline-block px-3 py-1 rounded-lg bg-green-100 text-green-700 font-geist font-bold text-xs border border-green-200">{adv.category?.replace(/_/g, ' ')}</span>
+                      <div className="space-y-3 text-base">
+                        <p className="font-geist text-sys-text/90 leading-relaxed">{gap.description}</p>
+                        <span className="inline-block px-3 py-1 rounded-lg bg-amber-100 text-amber-700 font-geist font-bold text-xs border border-amber-200">{gap.category?.replace(/_/g, ' ')}</span>
                       </div>
                     }
                   >
                     <div className="flex items-start gap-3">
-                      <TrendingUp size={20} className="text-sys-success shrink-0 mt-0.5" />
+                      <Zap size={20} className="text-sys-warning shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-geist font-bold text-base text-sys-text">{adv.title}</p>
-                        <p className="font-geist text-sm text-sys-muted mt-0.5 line-clamp-1">{adv.description}</p>
+                        <p className="font-geist font-bold text-base text-sys-text">{gap.title}</p>
+                        <p className="font-geist text-sm text-sys-muted mt-0.5 line-clamp-1">{gap.description}</p>
                       </div>
                     </div>
                   </ExpandableCard>

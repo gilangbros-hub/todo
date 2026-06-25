@@ -30,7 +30,7 @@ function TopBar() {
       <div className="flex items-center gap-3">
         <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sys-bg border border-sys-border">
           <span className="w-1.5 h-1.5 rounded-full bg-sys-success" />
-          <span className="font-geist text-xs font-bold text-sys-muted">DeepSeek V4</span>
+          <span className="font-geist text-xs font-bold text-sys-muted">Enablement Review</span>
         </div>
         <div className="w-8 h-8 rounded-lg bg-sys-primary-container/20 flex items-center justify-center">
           <BarChart3 size={16} className="text-sys-primary" />

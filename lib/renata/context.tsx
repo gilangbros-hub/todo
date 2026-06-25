@@ -30,6 +30,8 @@ const defaultExtras: AnalysisExtras = {
   context_diagram: '',
   impacted_components: [],
   use_case_scenarios: [],
+  enablement_recs: [],
+  strategic_alignment: [],
 };
 
 const RenataContext = createContext<RenataContextValue | null>(null);
@@ -79,6 +81,8 @@ function parseExtras(doc: BrdDocument | null): AnalysisExtras {
     context_diagram: safeParseString(doc.context_diagram),
     impacted_components: safeParseArray(doc.impacted_components),
     use_case_scenarios: safeParseArray(doc.use_case_scenarios),
+    enablement_recs: safeParseArray((doc as any).enablement_recs),
+    strategic_alignment: safeParseArray((doc as any).strategic_alignment),
   };
 }
 
